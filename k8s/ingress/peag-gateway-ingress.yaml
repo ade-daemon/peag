@@ -1,0 +1,29 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: peag-gateway
+  namespace: ai
+  labels:
+    app: peag-gateway
+    tier: ingress
+    env: local
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: websecure
+    traefik.ingress.kubernetes.io/router.tls: "true"
+spec:
+  ingressClassName: traefik
+  tls:
+    - hosts:
+        - peag.local
+      secretName: peag-tls
+  rules:
+    - host: peag.local
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: peag-gateway
+                port:
+                  number: 8000
