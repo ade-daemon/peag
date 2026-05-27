@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.env
+
+# Kubernetes secrets
+*secret*.yaml
+*secrets*.yaml
+
+# Editor
+.vscode/
+.idea/
+
+# OS
+.DS_Store
