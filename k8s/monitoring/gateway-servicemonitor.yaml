@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: peag-gateway-metrics
+  namespace: ai
+  labels:
+    app: peag-gateway
+    tier: monitoring
+spec:
+  selector:
+    app: peag-gateway
+  ports:
+    - name: metrics
+      protocol: TCP
+      port: 8000
+      targetPort: 8000
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: peag-gateway
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  namespaceSelector:
+    matchNames:
+      - ai
+  selector:
+    matchLabels:
+      app: peag-gateway
+  endpoints:
+    - port: metrics
+      path: /metrics/
+      interval: 15s

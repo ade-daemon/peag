@@ -169,3 +169,33 @@ async def start_watcher():
     from watcher import run_watcher
     asyncio.create_task(run_watcher())
     logger.info("Idle watcher started as background task")
+
+
+# ── PEAG custom Prometheus metrics ───────────────────────────────────────────
+from prometheus_client import Counter, Histogram, Gauge, make_asgi_app
+import time as time_module
+
+# Track every request by model and whether it was a cold or warm hit
+REQUEST_COUNTER = Counter(
+    "peag_requests_total",
+    "Total requests handled by PEAG",
+    ["model", "start_type"]  # start_type: cold | warm | warming
+)
+
+# Track cold-start latency — the key metric for the demo
+COLD_START_HISTOGRAM = Histogram(
+    "peag_cold_start_seconds",
+    "Time taken to warm a model from cold",
+    ["model"],
+    buckets=[5, 10, 20, 30, 45, 60, 90, 120]
+)
+
+# Track how many models are currently warm
+WARM_MODELS_GAUGE = Gauge(
+    "peag_warm_models_total",
+    "Number of models currently warm"
+)
+
+# Expose /metrics endpoint for Prometheus to scrape
+metrics_app = make_asgi_app()
+app.mount("/metrics", metrics_app)
