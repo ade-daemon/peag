@@ -1,0 +1,13 @@
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: peag
+nodes:
+  - role: control-plane
+  - role: worker
+    labels:
+      node-type: cpu
+      instance-type: spot
+  - role: worker
+    labels:
+      node-type: gpu
+      instance-type: on-demand

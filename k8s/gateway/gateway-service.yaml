@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: peag-gateway
+  namespace: ai
+  labels:
+    app: peag-gateway
+    tier: gateway
+    env: local
+spec:
+  selector:
+    app: peag-gateway
+  ports:
+    - protocol: TCP
+      port: 8000
+      targetPort: 8000
+      name: http
+  type: ClusterIP

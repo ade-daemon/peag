@@ -1,0 +1,141 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: modelconfigs.peag.io
+  labels:
+    app: peag
+    env: local
+spec:
+  group: peag.io
+  scope: Namespaced
+  names:
+    plural: modelconfigs
+    singular: modelconfig
+    kind: ModelConfig
+    shortNames:
+      - mc
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Model
+          type: string
+          jsonPath: .spec.modelName
+        - name: Backend
+          type: string
+          jsonPath: .spec.backend
+        - name: Hardware
+          type: string
+          jsonPath: .spec.hardware
+        - name: Status
+          type: string
+          jsonPath: .status.state
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+
+            spec:
+              type: object
+              required: ["modelName", "backend", "hardware"]
+              properties:
+
+                # ── The model identifier Ollama/vLLM will pull ──────────────
+                modelName:
+                  type: string
+                  description: "Model identifier e.g. llama3, mistral, phi3"
+
+                # ── Which serving backend to use ────────────────────────────
+                backend:
+                  type: string
+                  enum: ["ollama", "vllm", "openai-compatible"]
+                  description: "Inference backend"
+
+                # ── GPU or CPU node ─────────────────────────────────────────
+                hardware:
+                  type: string
+                  enum: ["gpu", "cpu"]
+                  description: "Target hardware class"
+
+                # ── What to do when the model is cold ──────────────────────
+                coldStartBehaviour:
+                  type: string
+                  enum: ["queue", "sse", "503"]
+                  default: "queue"
+                  description: >
+                    queue: hold the request until the model is warm.
+                    sse: stream a warming-up status to the client.
+                    503: return 503 with a Retry-After header immediately.
+
+                # ── How long to wait before scaling to zero ─────────────────
+                idleTTLSeconds:
+                  type: integer
+                  minimum: 30
+                  default: 300
+                  description: "Seconds of inactivity before scaling to zero"
+
+                # ── Resource requests and limits for the model pod ──────────
+                resources:
+                  type: object
+                  properties:
+                    requests:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                          default: "500m"
+                        memory:
+                          type: string
+                          default: "2Gi"
+                    limits:
+                      type: object
+                      properties:
+                        cpu:
+                          type: string
+                          default: "2"
+                        memory:
+                          type: string
+                          default: "8Gi"
+                        nvidia.com/gpu:
+                          type: string
+                          description: "Number of GPUs — only set when hardware: gpu"
+
+                # ── Max concurrent requests before KEDA scales up ───────────
+                maxConcurrentRequests:
+                  type: integer
+                  minimum: 1
+                  default: 5
+                  description: "Pending requests threshold that triggers a new replica"
+
+                # ── Hard cap on replicas ────────────────────────────────────
+                maxReplicas:
+                  type: integer
+                  minimum: 1
+                  default: 3
+
+            # ── PEAG writes status back here ────────────────────────────────
+            status:
+              type: object
+              properties:
+                state:
+                  type: string
+                  enum: ["cold", "warming", "warm", "scaling"]
+                  description: "Current lifecycle state of this model"
+                lastRequestTime:
+                  type: string
+                  format: date-time
+                  description: "Timestamp of the last request received"
+                podName:
+                  type: string
+                  description: "Name of the currently running model pod"
+                message:
+                  type: string
+                  description: "Human-readable status message"
+
+      subresources:
+        status: {}

@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: peag-gateway
+  namespace: ai
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: peag-gateway
+  namespace: ai
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list", "create", "delete", "patch"]
+  - apiGroups: [""]
+    resources: ["pods", "pods/log"]
+    verbs: ["get", "list"]
+  - apiGroups: ["peag.io"]
+    resources: ["modelconfigs"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: peag-gateway
+  namespace: ai
+subjects:
+  - kind: ServiceAccount
+    name: peag-gateway
+    namespace: ai
+roleRef:
+  kind: Role
+  name: peag-gateway
+  apiGroup: rbac.authorization.k8s.io

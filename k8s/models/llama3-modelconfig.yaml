@@ -1,0 +1,28 @@
+apiVersion: peag.io/v1alpha1
+kind: ModelConfig
+metadata:
+  name: llama3
+  namespace: ai
+  labels:
+    app: peag
+    env: local
+spec:
+  modelName: llama3
+  backend: ollama
+  hardware: gpu
+
+  # Heavy model — stream a warming status rather than making client wait blind
+  coldStartBehaviour: sse
+  idleTTLSeconds: 300
+
+  resources:
+    requests:
+      cpu: "1"
+      memory: "6Gi"
+    limits:
+      cpu: "4"
+      memory: "12Gi"
+      nvidia.com/gpu: "1"
+
+  maxConcurrentRequests: 3
+  maxReplicas: 2

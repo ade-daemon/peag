@@ -1,0 +1,48 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: peag-gateway
+  namespace: ai
+  labels:
+    app: peag-gateway
+    tier: gateway
+    env: local
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: peag-gateway
+  template:
+    metadata:
+      labels:
+        app: peag-gateway
+        tier: gateway
+        env: local
+    spec:
+      serviceAccountName: peag-gateway
+      containers:
+        - name: peag-gateway
+          image: peag-gateway:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+              name: http
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
