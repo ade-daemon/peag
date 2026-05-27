@@ -22,8 +22,8 @@ spec:
       serviceAccountName: peag-gateway
       containers:
         - name: peag-gateway
-          image: peag-gateway:latest
-          imagePullPolicy: Never
+          image: ghcr.io/ade-daemon/peag-gateway:latest-gateway:latest
+          imagePullPolicy: Always
           ports:
             - containerPort: 8000
               name: http
