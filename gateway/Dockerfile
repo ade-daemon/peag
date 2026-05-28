@@ -5,8 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy all gateway source files
-COPY main.py state.py scheduler.py watcher.py ./
+COPY main.py state.py scheduler.py watcher.py classifier.py ./
 
 RUN useradd -m -u 1000 peag && chown -R peag:peag /app
 USER peag

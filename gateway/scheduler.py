@@ -43,40 +43,36 @@ def _build_deployment(model_name: str, spec: dict) -> client.V1Deployment:
     hardware = spec.get("hardware", "cpu")
     backend  = spec.get("backend", "ollama")
     resources = spec.get("resources", {})
+    model_id = spec.get("modelName", model_name)
 
-    # Resource requests and limits from the ModelConfig
     req = resources.get("requests", {"cpu": "500m", "memory": "2Gi"})
     lim = resources.get("limits",   {"cpu": "2",    "memory": "8Gi"})
 
-    # GPU models get the nvidia resource limit injected
     if hardware == "gpu":
         lim["nvidia.com/gpu"] = resources.get("limits", {}).get("nvidia.com/gpu", "1")
 
+    image = "ollama/ollama:latest" if backend == "ollama" else "vllm/vllm-openai:latest"
+
     container = client.V1Container(
         name=model_name,
-        image="ollama/ollama:latest" if backend == "ollama" else "vllm/vllm-openai:latest",
+        image=image,
+        # Start Ollama server, wait for it, pull the model, then keep running
+        command=["sh", "-c", f"ollama serve & sleep 5 && ollama pull {model_id} && wait"],
         ports=[client.V1ContainerPort(container_port=11434, name="api")],
         env=[
-            client.V1EnvVar(name="OLLAMA_MODEL", value=spec.get("modelName", model_name)),
+            client.V1EnvVar(name="OLLAMA_MODEL", value=model_id),
         ],
         resources=client.V1ResourceRequirements(requests=req, limits=lim),
-        # Pull the model on startup
-        lifecycle=client.V1Lifecycle(
-            post_start=client.V1LifecycleHandler(
-                _exec=client.V1ExecAction(
-                    command=["ollama", "pull", spec.get("modelName", model_name)]
-                )
-            )
-        ),
         readiness_probe=client.V1Probe(
-            http_get=client.V1HTTPGetAction(path="/api/tags", port=11434),
+            _exec=client.V1ExecAction(
+                command=["sh", "-c", f"ollama list | grep -q {model_id}"],
+            ),
             initial_delay_seconds=10,
-            period_seconds=5,
-            failure_threshold=24,  # allow up to 2 min for model pull
+            period_seconds=10,
+            failure_threshold=30,
         ),
     )
 
-    # Node affinity — GPU models go to GPU nodes, CPU models to CPU nodes
     affinity = client.V1Affinity(
         node_affinity=client.V1NodeAffinity(
             preferred_during_scheduling_ignored_during_execution=[
@@ -124,10 +120,30 @@ def _build_deployment(model_name: str, spec: dict) -> client.V1Deployment:
     )
 
 
+def _build_service(model_name: str) -> client.V1Service:
+    """Build a ClusterIP Service so the gateway can route to this model."""
+    return client.V1Service(
+        metadata=client.V1ObjectMeta(
+            name=f"peag-{model_name}",
+            namespace=NAMESPACE,
+            labels={
+                "app": f"peag-{model_name}",
+                "managed-by": "peag",
+                "model": model_name,
+            },
+        ),
+        spec=client.V1ServiceSpec(
+            selector={"app": f"peag-{model_name}"},
+            ports=[client.V1ServicePort(port=11434, target_port=11434, name="api")],
+            type="ClusterIP",
+        ),
+    )
+
+
 async def spin_up(model_name: str) -> bool:
     """
-    Spin up a model deployment. Returns True if spin-up was triggered,
-    False if it was already running or ModelConfig not found.
+    Spin up a model deployment and service.
+    Returns True if spin-up was triggered, False if already running or no ModelConfig.
     """
     spec = _get_model_config(model_name)
     if not spec:
@@ -137,6 +153,7 @@ async def spin_up(model_name: str) -> bool:
     try:
         _load_kube_config()
         apps_v1 = client.AppsV1Api()
+        v1 = client.CoreV1Api()
 
         # Check if deployment already exists
         try:
@@ -149,11 +166,21 @@ async def spin_up(model_name: str) -> bool:
             if e.status != 404:
                 raise
 
-        # Create the deployment
+        # Create deployment
         deployment = _build_deployment(model_name, spec)
         apps_v1.create_namespaced_deployment(namespace=NAMESPACE, body=deployment)
-        set_state(model_name, ModelState.WARMING)
         logger.info(f"Deployment created for {model_name} — state: warming")
+
+        # Create service so gateway can route to this model
+        service = _build_service(model_name)
+        try:
+            v1.create_namespaced_service(namespace=NAMESPACE, body=service)
+            logger.info(f"Service created for {model_name}")
+        except ApiException as e:
+            if e.status != 409:  # 409 = already exists, fine
+                logger.warning(f"Service creation failed for {model_name}: {e}")
+
+        set_state(model_name, ModelState.WARMING)
         return True
 
     except Exception as e:
@@ -163,17 +190,32 @@ async def spin_up(model_name: str) -> bool:
 
 
 async def scale_to_zero(model_name: str) -> None:
-    """Delete the model deployment — scales it to absolute zero."""
+    """Delete the model deployment and service — scales to absolute zero."""
     try:
         _load_kube_config()
         apps_v1 = client.AppsV1Api()
+        v1 = client.CoreV1Api()
+
+        # Delete deployment
         apps_v1.delete_namespaced_deployment(
             name=f"peag-{model_name}",
             namespace=NAMESPACE,
             body=client.V1DeleteOptions(propagation_policy="Foreground"),
         )
-        set_state(model_name, ModelState.COLD)
         logger.info(f"Deployment deleted for {model_name} — state: cold")
+
+        # Delete service
+        try:
+            v1.delete_namespaced_service(
+                name=f"peag-{model_name}", namespace=NAMESPACE
+            )
+            logger.info(f"Service deleted for {model_name}")
+        except ApiException as e:
+            if e.status != 404:
+                logger.warning(f"Service deletion failed for {model_name}: {e}")
+
+        set_state(model_name, ModelState.COLD)
+
     except ApiException as e:
         if e.status == 404:
             logger.info(f"Deployment for {model_name} already gone")
@@ -182,7 +224,7 @@ async def scale_to_zero(model_name: str) -> None:
             logger.error(f"scale_to_zero failed for {model_name}: {e}")
 
 
-async def wait_until_warm(model_name: str, timeout: int = 120) -> bool:
+async def wait_until_warm(model_name: str, timeout: int = 900) -> bool:
     """
     Poll until the model deployment is Ready, or timeout.
     Returns True if warm, False if timed out.

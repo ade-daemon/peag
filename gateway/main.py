@@ -7,7 +7,7 @@ from state import (
     ModelState, get_state, set_state,
     update_last_request, increment_pending, decrement_pending
 )
-from scheduler import spin_up, wait_until_warm
+from scheduler import spin_up, wait_until_warm, _get_model_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -89,7 +89,7 @@ async def chat_completions(request: Request):
             #   "queue" → wait here (current behaviour)
             #   "sse"   → stream warming status
             #   "503"   → return immediately with Retry-After
-            warm = await wait_until_warm(model_name, timeout=120)
+            warm = await wait_until_warm(model_name, timeout=300)
             if not warm:
                 raise HTTPException(
                     status_code=503,
@@ -199,3 +199,55 @@ WARM_MODELS_GAUGE = Gauge(
 # Expose /metrics endpoint for Prometheus to scrape
 metrics_app = make_asgi_app()
 app.mount("/metrics", metrics_app)
+
+
+# ── Auto-routing: classify prompt and select model automatically ──────────────
+@app.post("/v1/chat/completions/auto")
+async def auto_chat_completions(request: Request):
+    """
+    OpenAI-compatible endpoint that automatically selects the right model
+    based on the prompt content. Clients don't need to specify a model.
+    """
+    from classifier import classify, extract_prompt
+
+    body = await request.json()
+    messages = body.get("messages", [])
+    prompt = extract_prompt(messages)
+
+    if not prompt:
+        raise HTTPException(status_code=400, detail="No user message found")
+
+    task_type, model_name = classify(prompt)
+
+    # Resolve actual model identifier from ModelConfig
+    mc_spec = _get_model_config(model_name)
+    actual_model = mc_spec.get("modelName", model_name) if mc_spec else model_name
+    body["model"] = actual_model
+    logger.info(f"Resolved model: {model_name} → {actual_model}")
+    logger.info(f"Auto-routing: task={task_type} → model={actual_model}")
+
+    # Add classification metadata to the request for metrics
+    REQUEST_COUNTER.labels(model=actual_model, start_type="auto").inc()
+    update_last_request(model_name)
+    increment_pending(model_name)
+
+    try:
+        state = get_state(model_name)
+
+        if state == ModelState.COLD:
+            await spin_up(model_name)
+            warm = await wait_until_warm(model_name, timeout=300)
+            if not warm:
+                raise HTTPException(
+                    status_code=503,
+                    detail=f"Model {model_name} timed out during cold start"
+                )
+        elif state == ModelState.WARMING:
+            warm = await wait_until_warm(model_name)
+            if not warm:
+                raise HTTPException(status_code=503, detail="Model not ready")
+
+        return await _proxy_request(model_name, body, request)
+
+    finally:
+        decrement_pending(model_name)
