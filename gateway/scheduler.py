@@ -62,6 +62,12 @@ def _build_deployment(model_name: str, spec: dict) -> client.V1Deployment:
         env=[
             client.V1EnvVar(name="OLLAMA_MODEL", value=model_id),
         ],
+        volume_mounts=[
+            client.V1VolumeMount(
+                name="ollama-models",
+                mount_path="/root/.ollama",
+            )
+        ],
         resources=client.V1ResourceRequirements(requests=req, limits=lim),
         readiness_probe=client.V1Probe(
             _exec=client.V1ExecAction(
@@ -114,6 +120,14 @@ def _build_deployment(model_name: str, spec: dict) -> client.V1Deployment:
                 spec=client.V1PodSpec(
                     containers=[container],
                     affinity=affinity,
+                    volumes=[
+                        client.V1Volume(
+                            name="ollama-models",
+                            persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                                claim_name="ollama-models"
+                            ),
+                        )
+                    ],
                 ),
             ),
         ),
