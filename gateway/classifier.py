@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 RULES = [
     {
         "task": "code",
-        "model": "llama3",
+        "model": "smart",
         "keywords": [
             "code", "function", "script", "debug", "error", "bug",
             "program", "class", "algorithm", "implement", "refactor",
@@ -18,7 +18,7 @@ RULES = [
     },
     {
         "task": "creative",
-        "model": "llama3",
+        "model": "smart",
         "keywords": [
             "write", "story", "poem", "creative", "essay", "blog",
             "draft", "compose", "narrative", "fiction", "describe"
@@ -26,7 +26,7 @@ RULES = [
     },
     {
         "task": "summary",
-        "model": "phi3",
+        "model": "fast",
         "keywords": [
             "summarize", "summary", "tldr", "shorten", "condense",
             "brief", "overview", "recap", "outline", "key points"
@@ -34,7 +34,7 @@ RULES = [
     },
     {
         "task": "question",
-        "model": "phi3",
+        "model": "fast",
         "keywords": [
             "what is", "what are", "who is", "where is", "when did",
             "how does", "why is", "explain", "define", "tell me"
@@ -42,7 +42,7 @@ RULES = [
     },
 ]
 
-DEFAULT_MODEL = "phi3"
+DEFAULT_MODEL = "fast"
 
 
 def classify(prompt: str) -> tuple[str, str]:

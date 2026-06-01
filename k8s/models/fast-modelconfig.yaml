@@ -1,20 +1,17 @@
 apiVersion: peag.io/v1alpha1
 kind: ModelConfig
 metadata:
-  name: phi3
+  name: fast
   namespace: ai
   labels:
     app: peag
     env: local
 spec:
-  modelName: phi3
+  modelName: tinyllama
   backend: ollama
   hardware: cpu
-
-  # Lightweight model — queue and wait, it starts fast
   coldStartBehaviour: queue
-  idleTTLSeconds: 120
-
+  idleTTLSeconds: 600
   resources:
     requests:
       cpu: "500m"
@@ -22,6 +19,5 @@ spec:
     limits:
       cpu: "2"
       memory: "4Gi"
-
   maxConcurrentRequests: 10
-  maxReplicas: 2
+  maxReplicas: 3
