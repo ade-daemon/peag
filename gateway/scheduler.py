@@ -38,6 +38,34 @@ def _get_model_config(model_name: str) -> dict | None:
         return None
 
 
+def find_config_by_model_name(model_id: str) -> str | None:
+    """
+    Given an actual model name (e.g. 'tinyllama'), find the ModelConfig
+    name that references it (e.g. 'phi3').
+    Returns the ModelConfig name or None if not found.
+    """
+    try:
+        _load_kube_config()
+        custom = client.CustomObjectsApi()
+        configs = custom.list_namespaced_custom_object(
+            group="peag.io",
+            version="v1alpha1",
+            namespace=NAMESPACE,
+            plural="modelconfigs",
+        )
+        for mc in configs.get("items", []):
+            spec = mc.get("spec", {})
+            if spec.get("modelName", "") == model_id:
+                return mc["metadata"]["name"]
+            # Also match by config name directly
+            if mc["metadata"]["name"] == model_id:
+                return mc["metadata"]["name"]
+        return None
+    except Exception as e:
+        logger.error(f"find_config_by_model_name error: {e}")
+        return None
+
+
 def _build_deployment(model_name: str, spec: dict) -> client.V1Deployment:
     """Build a Kubernetes Deployment object for a model pod."""
     hardware = spec.get("hardware", "cpu")

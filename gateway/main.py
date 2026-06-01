@@ -101,6 +101,56 @@ async def chat_completions(request: Request):
         decrement_pending(model_name)
 
 
+# ── /api/tags — return all available models across all ModelConfigs ────────────
+@app.get("/api/tags")
+async def api_tags():
+    """
+    Open WebUI calls this to list available models.
+    We return all models defined in ModelConfigs so the UI shows them.
+    """
+    from scheduler import _get_model_config
+    from kubernetes import client, config as kube_config
+
+    try:
+        kube_config.load_incluster_config()
+    except Exception:
+        kube_config.load_kube_config()
+
+    custom = client.CustomObjectsApi()
+    configs = custom.list_namespaced_custom_object(
+        group="peag.io",
+        version="v1alpha1",
+        namespace="ai",
+        plural="modelconfigs",
+    )
+
+    models = []
+    for mc in configs.get("items", []):
+        spec = mc.get("spec", {})
+        name = mc["metadata"]["name"]
+        model_id = spec.get("modelName", name)
+        models.append({
+            "name": f"{model_id}:latest",
+            "model": f"{model_id}:latest",
+            "modified_at": "2026-01-01T00:00:00Z",
+            "size": 0,
+            "digest": "",
+            "details": {
+                "family": "llama",
+                "parameter_size": "unknown",
+                "quantization_level": "unknown",
+            }
+        })
+
+    return {"models": models}
+
+
+@app.get("/api/version")
+async def api_version():
+    """Open WebUI calls this to check Ollama version."""
+    return {"version": "0.1.0"}
+
+
 # ── Ollama native API passthrough (for Open WebUI compatibility) ───────────────
 @app.api_route("/api/{path:path}", methods=["GET", "POST", "DELETE"])
 async def ollama_passthrough(path: str, request: Request):
@@ -121,24 +171,43 @@ async def ollama_passthrough(path: str, request: Request):
         pass
 
     if model_name:
-        state = get_state(model_name)
-        if state == ModelState.COLD:
-            await spin_up(model_name)
-            await wait_until_warm(model_name)
-        update_last_request(model_name)
-        target_url = f"{model_url(model_name)}/api/{path}"
+        # Strip :latest suffix
+        model_name = model_name.replace(":latest", "")
+        # Find the ModelConfig that owns this model
+        from scheduler import find_config_by_model_name
+        config_name = find_config_by_model_name(model_name)
+        if config_name:
+            state = get_state(config_name)
+            if state == ModelState.COLD:
+                await spin_up(config_name)
+                await wait_until_warm(config_name)
+            update_last_request(config_name)
+            target_url = f"{model_url(config_name)}/api/{path}"
+        else:
+            target_url = f"http://ollama.ai.svc.cluster.local:{OLLAMA_PORT}/api/{path}"
     else:
         # No model specified — route to the static Ollama deployment
         target_url = f"http://ollama.ai.svc.cluster.local:{OLLAMA_PORT}/api/{path}"
 
-    async with httpx.AsyncClient(timeout=120.0) as http:
-        resp = await http.request(
-            method=request.method,
-            url=target_url,
-            content=body,
-            headers={"Content-Type": "application/json"},
-        )
-        return JSONResponse(content=resp.json(), status_code=resp.status_code)
+    http = httpx.AsyncClient(timeout=120.0)
+    
+    async def stream_ollama():
+        try:
+            async with http.stream(
+                method=request.method,
+                url=target_url,
+                content=body,
+                headers={"Content-Type": "application/json"},
+            ) as resp:
+                async for chunk in resp.aiter_bytes():
+                    yield chunk
+        finally:
+            await http.aclose()
+
+    return StreamingResponse(
+        stream_ollama(),
+        media_type="application/x-ndjson",
+    )
 
 
 # ── Internal proxy helper ─────────────────────────────────────────────────────
@@ -251,3 +320,5 @@ async def auto_chat_completions(request: Request):
 
     finally:
         decrement_pending(model_name)
+
+
