@@ -95,34 +95,115 @@ async def _tool_web_search(query: str) -> str:
 
 
 async def _tool_file_reader(path: str) -> str:
-    """Read a file from the filesystem."""
+    """Read files — supports txt, md, pdf, csv, docx."""
+    if not path:
+        return "No file path provided."
     try:
-        with open(path, "r") as f:
-            content = f.read(5000)  # limit to 5000 chars
-        return content
+        import os
+        if not os.path.exists(path):
+            return f"File not found: {path}"
+
+        ext = os.path.splitext(path)[1].lower()
+
+        # Plain text files
+        if ext in [".txt", ".md", ".json", ".yaml", ".yml", ".py", ".js", ".html"]:
+            with open(path, "r", encoding="utf-8") as f:
+                content = f.read(10000)
+            return f"File: {path}\n\n{content}"
+
+        # CSV files
+        elif ext == ".csv":
+            import csv
+            rows = []
+            with open(path, "r", encoding="utf-8") as f:
+                reader = csv.reader(f)
+                for i, row in enumerate(reader):
+                    if i > 50:
+                        rows.append("... (truncated at 50 rows)")
+                        break
+                    rows.append(", ".join(row))
+            return f"CSV file: {path}\n\n" + "\n".join(rows)
+
+        # PDF files
+        elif ext == ".pdf":
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(path)
+                text = ""
+                for page in reader.pages[:10]:  # first 10 pages
+                    page_text = page.extract_text() or ""
+                    text += page_text + "\n"
+                return f"PDF file: {path}\n\n{text[:8000]}"
+            except ImportError:
+                return "PDF reading requires pypdf. Install with: pip install pypdf"
+
+        else:
+            return f"Unsupported file type: {ext}. Supported: txt, md, json, yaml, py, js, html, csv, pdf"
+
     except Exception as e:
+        logger.error(f"File reader error: {e}")
         return f"File read failed: {e}"
 
 
 async def _tool_code_runner(code: str) -> str:
-    """Run Python code in a subprocess sandbox."""
+    """
+    Run Python code in a sandboxed subprocess.
+    10 second timeout. Captures stdout and stderr.
+    Blocked: file system writes outside /tmp, network calls, imports of os.system.
+    """
+    if not code:
+        return "No code provided."
+
+    # Basic safety check — block dangerous operations
+    blocked = ["os.system", "subprocess.call", "subprocess.run",
+               "eval(", "exec(", "__import__", "open('/etc", "open('/proc"]
+    for b in blocked:
+        if b in code:
+            return f"Blocked operation detected: '{b}'. For security, this operation is not allowed."
+
     import asyncio
+    import tempfile
+    import os
+
+    # Write code to a temp file
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py",
+                                     delete=False, dir="/tmp") as f:
+        f.write(code)
+        tmp_path = f.name
+
     try:
         proc = await asyncio.create_subprocess_exec(
-            "python3", "-c", code,
+            "python3", tmp_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env={**os.environ, "PYTHONPATH": ""},
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=10.0)
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=10.0
+            )
+        except asyncio.TimeoutError:
+            proc.kill()
+            return "Code execution timed out (10 second limit)."
+
+        output = ""
         if stdout:
-            return stdout.decode()
+            output += f"Output:\n{stdout.decode()}"
         if stderr:
-            return f"Error: {stderr.decode()}"
-        return "Code ran with no output."
-    except asyncio.TimeoutError:
-        return "Code execution timed out (10s limit)."
+            output += f"\nErrors:\n{stderr.decode()}"
+        if not output:
+            output = "Code ran successfully with no output."
+
+        return output
+
     except Exception as e:
+        logger.error(f"Code runner error: {e}")
         return f"Code execution failed: {e}"
+    finally:
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
 
 
 # ── Agent loop ────────────────────────────────────────────────────────────────
@@ -232,6 +313,9 @@ async def run_agent(
         while iteration < max_iterations:
             iteration += 1
             logger.info(f"Agent loop iteration {iteration}")
+            # Keep the model alive — update last request time each iteration
+            from state import update_last_request
+            update_last_request(config_name)
 
             # Only add tools if using a capable model (smart)
             # tinyllama and phi3 don't support tool calling

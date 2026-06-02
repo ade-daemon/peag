@@ -8,3 +8,4 @@ prometheus-client==0.21.1
 duckduckgo-search==6.3.7
 duckduckgo-search==6.3.7
 duckduckgo-search==6.3.7
+pypdf==4.3.1

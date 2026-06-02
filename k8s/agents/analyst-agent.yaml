@@ -1,0 +1,24 @@
+apiVersion: peag.io/v1alpha1
+kind: AgentConfig
+metadata:
+  name: analyst
+  namespace: ai
+  labels:
+    app: peag
+spec:
+  name: "Data Analyst Agent"
+  model: auto
+  systemPrompt: |
+    You are a data analyst assistant. You can read files, run Python code
+    to analyze data, and search the web for context. When given a task:
+    1. Read any relevant files first
+    2. Write and run Python code to analyze the data
+    3. Summarise your findings clearly
+    Be precise, show your work, and explain your conclusions.
+  tools:
+    - file_reader
+    - code_runner
+    - web_search
+  memory:
+    enabled: true
+    maxMessages: 20
