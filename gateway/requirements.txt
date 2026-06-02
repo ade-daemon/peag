@@ -5,3 +5,6 @@ redis==7.4.0
 kubernetes==36.0.1
 pydantic==2.13.4
 prometheus-client==0.21.1
+duckduckgo-search==6.3.7
+duckduckgo-search==6.3.7
+duckduckgo-search==6.3.7

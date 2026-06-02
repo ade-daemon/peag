@@ -77,23 +77,20 @@ async def _run_tool(tool_name: str, tool_input: dict) -> str:
 
 
 async def _tool_web_search(query: str) -> str:
-    """Search the web using DuckDuckGo."""
+    """Search the web using DuckDuckGo — no API key required."""
     if not query:
         return "No search query provided."
     try:
-        async with httpx.AsyncClient(timeout=10.0) as http:
-            resp = await http.get(
-                "https://api.duckduckgo.com/",
-                params={"q": query, "format": "json", "no_html": "1"},
-            )
-            data = resp.json()
-            abstract = data.get("AbstractText", "")
-            related = [r.get("Text", "") for r in data.get("RelatedTopics", [])[:3]]
-            result = abstract if abstract else "No direct answer found."
-            if related:
-                result += "\n\nRelated: " + " | ".join(r for r in related if r)
-            return result
+        from duckduckgo_search import DDGS
+        results = []
+        with DDGS() as ddgs:
+            for r in ddgs.text(query, max_results=5):
+                results.append(f"Title: {r['title']}\nURL: {r['href']}\nSummary: {r['body']}\n")
+        if not results:
+            return "No results found."
+        return "\n---\n".join(results)
     except Exception as e:
+        logger.error(f"Web search error: {e}")
         return f"Web search failed: {e}"
 
 
@@ -170,10 +167,15 @@ async def run_agent(
     # ── Ensure model is warm ──────────────────────────────────────────────────
     state = get_state(config_name)
     if state == ModelState.COLD:
+        # Clean up any stale deployment before spinning up fresh
+        from scheduler import scale_to_zero
+        await scale_to_zero(config_name)
+        import asyncio
+        await asyncio.sleep(2)
         triggered = await spin_up(config_name)
         if not triggered:
             return {"error": f"Could not spin up model '{config_name}'"}
-        warm = await wait_until_warm(config_name)
+        warm = await wait_until_warm(config_name, timeout=300)
         if not warm:
             return {"error": f"Model '{config_name}' timed out during warm-up"}
 
