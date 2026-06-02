@@ -275,12 +275,14 @@ async def _proxy_request(model_name: str, body: dict, request: Request):
             return JSONResponse(content=resp.json(), status_code=resp.status_code)
 
 
-# ── Start idle watcher as a background task on startup ────────────────────────
+# ── Start idle watcher and agent scheduler as background tasks on startup ───
 @app.on_event("startup")
 async def start_watcher():
     from watcher import run_watcher
+    from agent_scheduler import run_agent_scheduler
     asyncio.create_task(run_watcher())
-    logger.info("Idle watcher started as background task")
+    asyncio.create_task(run_agent_scheduler())
+    logger.info("Idle watcher and agent scheduler started")
 
 
 # ── PEAG custom Prometheus metrics ───────────────────────────────────────────
