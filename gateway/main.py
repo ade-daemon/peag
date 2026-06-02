@@ -277,7 +277,7 @@ async def auto_chat_completions(request: Request):
     OpenAI-compatible endpoint that automatically selects the right model
     based on the prompt content. Clients don't need to specify a model.
     """
-    from classifier import classify, extract_prompt
+    from task_intelligence import route, extract_prompt
 
     body = await request.json()
     messages = body.get("messages", [])
@@ -286,7 +286,8 @@ async def auto_chat_completions(request: Request):
     if not prompt:
         raise HTTPException(status_code=400, detail="No user message found")
 
-    task_type, model_name = classify(prompt)
+    task_type, model_name, complexity = route(prompt, is_agent=False)
+    logger.info(f"Task intelligence: type={task_type} complexity={complexity} model={model_name}")
 
     # Resolve actual model identifier from ModelConfig
     mc_spec = _get_model_config(model_name)
@@ -322,3 +323,19 @@ async def auto_chat_completions(request: Request):
         decrement_pending(model_name)
 
 
+
+
+@app.get("/")
+async def root():
+    return {
+        "service": "PEAG Gateway",
+        "version": "0.1.0",
+        "status": "running",
+        "endpoints": {
+            "health": "/health",
+            "models": "/api/tags",
+            "chat": "/v1/chat/completions",
+            "auto_chat": "/v1/chat/completions/auto",
+            "docs": "/docs"
+        }
+    }

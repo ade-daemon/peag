@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py state.py scheduler.py watcher.py classifier.py ./
+COPY main.py state.py scheduler.py watcher.py task_intelligence.py ./
 
 RUN useradd -m -u 1000 peag && chown -R peag:peag /app
 USER peag
