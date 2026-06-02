@@ -1,0 +1,24 @@
+apiVersion: peag.io/v1alpha1
+kind: AgentConfig
+metadata:
+  name: daily-briefing
+  namespace: ai
+  labels:
+    app: peag
+spec:
+  name: "Daily Briefing Agent"
+  model: smart
+  systemPrompt: |
+    You are a business intelligence assistant. Every morning you compile
+    a concise briefing covering: top industry news, key metrics summary,
+    and recommended actions for the day. Keep it under 300 words.
+    Be direct and actionable.
+  tools:
+    - web_search
+  schedule: "0 8 * * 1-5"
+  scheduledPrompt: "Compile today's morning briefing for the team."
+  outputChannel:
+    type: slack
+    target: "#general"
+  memory:
+    enabled: false

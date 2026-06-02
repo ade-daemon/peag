@@ -1,0 +1,23 @@
+apiVersion: peag.io/v1alpha1
+kind: AgentConfig
+metadata:
+  name: researcher
+  namespace: ai
+  labels:
+    app: peag
+spec:
+  name: "Research Agent"
+  model: smart
+  systemPrompt: |
+    You are a research assistant. When given a topic, you search the web
+    for current information, summarise the key findings clearly, and
+    cite your sources. You are thorough, accurate, and concise.
+    Always structure your response with: Summary, Key Findings, Sources.
+  tools:
+    - web_search
+    - file_reader
+  memory:
+    enabled: true
+    maxMessages: 20
+  outputChannel:
+    type: none

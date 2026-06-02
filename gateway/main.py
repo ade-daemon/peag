@@ -382,3 +382,49 @@ async def root():
             "docs": "/docs"
         }
     }
+
+
+# ── Agent endpoints ───────────────────────────────────────────────────────────
+
+@app.get("/v1/agents")
+async def list_agents():
+    """List all configured agents."""
+    from agent_executor import _get_all_agent_configs
+    configs = _get_all_agent_configs()
+    agents = []
+    for ac in configs:
+        spec = ac.get("spec", {})
+        agents.append({
+            "id": ac["metadata"]["name"],
+            "name": spec.get("name", ac["metadata"]["name"]),
+            "model": spec.get("model", "auto"),
+            "tools": spec.get("tools", []),
+            "schedule": spec.get("schedule"),
+        })
+    return {"agents": agents}
+
+
+@app.post("/v1/agents/{agent_name}/run")
+async def run_agent_endpoint(agent_name: str, request: Request):
+    """Run an agent with a user message."""
+    from agent_executor import run_agent
+    body = await request.json()
+    user_message = body.get("message", "")
+    history = body.get("history", [])
+
+    if not user_message:
+        raise HTTPException(status_code=400, detail="message field is required")
+
+    logger.info(f"Running agent: {agent_name}")
+    result = await run_agent(agent_name, user_message, history)
+    return result
+
+
+@app.get("/v1/agents/{agent_name}")
+async def get_agent(agent_name: str):
+    """Get details of a specific agent."""
+    from agent_executor import _get_agent_config
+    spec = _get_agent_config(agent_name)
+    if not spec:
+        raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+    return {"agent": agent_name, "spec": spec}

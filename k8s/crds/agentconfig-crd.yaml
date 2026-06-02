@@ -1,0 +1,136 @@
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: agentconfigs.peag.io
+  labels:
+    app: peag
+spec:
+  group: peag.io
+  scope: Namespaced
+  names:
+    plural: agentconfigs
+    singular: agentconfig
+    kind: AgentConfig
+    shortNames:
+      - ac
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Model
+          type: string
+          jsonPath: .spec.model
+        - name: Tools
+          type: string
+          jsonPath: .spec.tools
+        - name: Schedule
+          type: string
+          jsonPath: .spec.schedule
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: ["spec"]
+          properties:
+            spec:
+              type: object
+              required: ["name", "systemPrompt"]
+              properties:
+
+                # ── Display name ──────────────────────────────────────────────
+                name:
+                  type: string
+                  description: "Human-readable agent name"
+
+                # ── Which model to use ────────────────────────────────────────
+                model:
+                  type: string
+                  enum: ["auto", "fast", "smart"]
+                  default: "auto"
+                  description: >
+                    auto: task intelligence picks the model.
+                    fast: always use the fast model.
+                    smart: always use the smart model.
+
+                # ── The agent's personality and instructions ──────────────────
+                systemPrompt:
+                  type: string
+                  description: "System prompt defining agent behaviour and role"
+
+                # ── Tools this agent can use ──────────────────────────────────
+                tools:
+                  type: array
+                  default: []
+                  items:
+                    type: string
+                    enum:
+                      - web_search
+                      - file_reader
+                      - code_runner
+                      - rag
+                      - slack
+                      - email
+                      - google_docs
+                      - notion
+                  description: "List of tools available to this agent"
+
+                # ── RAG document sources ──────────────────────────────────────
+                ragSources:
+                  type: array
+                  default: []
+                  items:
+                    type: string
+                  description: "Paths or URLs to documents for RAG"
+
+                # ── Scheduled runs (cron format) ──────────────────────────────
+                schedule:
+                  type: string
+                  description: "Cron expression for automatic runs e.g. '0 9 * * 1-5'"
+
+                # ── What to do when the schedule fires ───────────────────────
+                scheduledPrompt:
+                  type: string
+                  description: "Prompt to run automatically on schedule"
+
+                # ── Where to send scheduled run output ───────────────────────
+                outputChannel:
+                  type: object
+                  properties:
+                    type:
+                      type: string
+                      enum: ["slack", "email", "webhook", "none"]
+                      default: "none"
+                    target:
+                      type: string
+                      description: "Slack channel, email address, or webhook URL"
+
+                # ── Memory settings ───────────────────────────────────────────
+                memory:
+                  type: object
+                  properties:
+                    enabled:
+                      type: boolean
+                      default: true
+                    maxMessages:
+                      type: integer
+                      default: 20
+                      description: "Max messages to keep in short-term memory"
+
+            # ── Status written back by the agent runtime ──────────────────────
+            status:
+              type: object
+              properties:
+                lastRun:
+                  type: string
+                  format: date-time
+                lastRunStatus:
+                  type: string
+                  enum: ["success", "failed", "running"]
+                lastRunOutput:
+                  type: string
+
+      subresources:
+        status: {}
