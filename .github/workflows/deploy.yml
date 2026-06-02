@@ -6,6 +6,7 @@ on:
     paths:
       - 'gateway/**'
       - 'k8s/**'
+      - 'install.sh'
       - '.github/workflows/**'
 
 env:
