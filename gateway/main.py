@@ -124,7 +124,21 @@ async def api_tags():
         plural="modelconfigs",
     )
 
-    models = []
+    models = [
+        {
+            "name": "peag-auto:latest",
+            "model": "peag-auto:latest",
+            "modified_at": "2026-01-01T00:00:00Z",
+            "size": 0,
+            "digest": "",
+            "details": {
+                "family": "peag",
+                "parameter_size": "auto",
+                "quantization_level": "auto",
+            }
+        }
+    ]
+
     for mc in configs.get("items", []):
         spec = mc.get("spec", {})
         name = mc["metadata"]["name"]
@@ -173,6 +187,35 @@ async def ollama_passthrough(path: str, request: Request):
     if model_name:
         # Strip :latest suffix
         model_name = model_name.replace(":latest", "")
+        
+        # peag-auto — route through task intelligence
+        if model_name == "peag-auto":
+            body_json = json.loads(body)
+            messages = body_json.get("messages", [])
+            from task_intelligence import route, extract_prompt
+            prompt = extract_prompt(messages)
+            task_type, config_name, complexity = route(prompt, is_agent=False)
+            mc_spec = _get_model_config(config_name)
+            actual_model = mc_spec.get("modelName", config_name) if mc_spec else config_name
+            body_json["model"] = actual_model
+            logger.info(f"peag-auto: task={task_type} complexity={complexity} → {config_name} ({actual_model})")
+            state = get_state(config_name)
+            if state == ModelState.COLD:
+                await spin_up(config_name)
+                await wait_until_warm(config_name)
+            update_last_request(config_name)
+            body = json.dumps(body_json).encode()
+            target_url = f"{model_url(config_name)}/api/{path}"
+            http = httpx.AsyncClient(timeout=120.0)
+            async def stream_auto():
+                try:
+                    async with http.stream(method=request.method, url=target_url, content=body, headers={"Content-Type": "application/json"}) as resp:
+                        async for chunk in resp.aiter_bytes():
+                            yield chunk
+                finally:
+                    await http.aclose()
+            return StreamingResponse(stream_auto(), media_type="application/x-ndjson")
+        
         # Find the ModelConfig that owns this model
         from scheduler import find_config_by_model_name
         config_name = find_config_by_model_name(model_name)
