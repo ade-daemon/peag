@@ -21,7 +21,7 @@ redis_client = redis.Redis(
 # How long a model stays "warm" in Redis before we consider it cold again.
 # The idle watcher handles actual pod scale-down — this TTL just prevents
 # Redis from holding stale warm states if the watcher misses something.
-WARM_TTL_SECONDS = 360  # 6 minutes — slightly longer than the longest model idleTTL
+WARM_TTL_SECONDS = 700  # 11 minutes — slightly longer than the longest model idleTTL
 
 
 def get_state(model_name: str) -> ModelState:

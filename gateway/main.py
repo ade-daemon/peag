@@ -1,8 +1,10 @@
 import asyncio
 import logging
+import json
 import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
+from pydantic import BaseModel
 from state import (
     ModelState, get_state, set_state,
     update_last_request, increment_pending, decrement_pending
@@ -84,18 +86,102 @@ async def chat_completions(request: Request):
                     detail=f"No ModelConfig found for model: {model_name}",
                 )
 
-            # Default cold-start behaviour: queue and hold
-            # TODO: read coldStartBehaviour from ModelConfig CRD and branch:
-            #   "queue" → wait here (current behaviour)
-            #   "sse"   → stream warming status
-            #   "503"   → return immediately with Retry-After
-            warm = await wait_until_warm(model_name, timeout=300)
-            if not warm:
+            # Read coldStartBehaviour from the ModelConfig CRD
+            mc_spec = _get_model_config(model_name)
+            cold_start_behaviour = (mc_spec or {}).get("coldStartBehaviour", "queue")
+
+            if cold_start_behaviour == "503":
+                # Return immediately — client should retry
                 raise HTTPException(
                     status_code=503,
-                    detail=f"Model {model_name} timed out during cold start.",
+                    headers={"Retry-After": "30"},
+                    detail=f"Model {model_name} is cold. Spin-up triggered — retry in ~30s.",
                 )
-            return await _proxy_request(model_name, body, request)
+
+            elif cold_start_behaviour == "sse":
+                # Phase 1: stream SSE warming status events until model is ready.
+                # Phase 2: once warm, send a final SSE event with the full
+                #          chat completion JSON payload embedded in the data field.
+                #
+                # This keeps a single media type (text/event-stream) throughout
+                # the response so clients never see a mixed-type stream.
+                # The client should listen for event: done and parse data as JSON.
+
+                async def _sse_warming():
+                    import time as _time
+                    import json as _json
+                    start = _time.time()
+                    timeout = 300
+
+                    # ── Phase 1: warming status events ────────────────────────
+                    while True:
+                        elapsed = int(_time.time() - start)
+                        st = get_state(model_name)
+
+                        if elapsed >= timeout:
+                            yield "event: error\n"
+                            yield f"data: {_json.dumps({'status': 'timeout', 'elapsed': elapsed})}\n\n"
+                            return
+
+                        if st == ModelState.WARM:
+                            yield "event: status\n"
+                            yield f"data: {_json.dumps({'status': 'warm', 'elapsed': elapsed})}\n\n"
+                            break
+
+                        yield "event: status\n"
+                        yield f"data: {_json.dumps({'status': 'warming', 'elapsed': elapsed})}\n\n"
+                        await asyncio.sleep(3)
+
+                    # ── Phase 2: proxy the request, stream chunks as SSE data ─
+                    # Each Ollama NDJSON chunk is wrapped in an SSE data line.
+                    # The final chunk (finish_reason != null) gets event: done.
+                    target = f"{model_url(model_name)}/v1/chat/completions"
+                    try:
+                        async with httpx.AsyncClient(timeout=120.0) as http:
+                            async with http.stream("POST", target, json=body) as resp:
+                                async for raw_chunk in resp.aiter_lines():
+                                    if not raw_chunk.strip():
+                                        continue
+                                    # Detect final chunk
+                                    is_done = False
+                                    try:
+                                        parsed = _json.loads(raw_chunk)
+                                        finish = (
+                                            parsed.get("choices", [{}])[0]
+                                            .get("finish_reason")
+                                        )
+                                        is_done = finish is not None
+                                    except Exception:
+                                        pass
+
+                                    if is_done:
+                                        yield "event: done\n"
+                                        yield f"data: {raw_chunk}\n\n"
+                                    else:
+                                        yield "event: chunk\n"
+                                        yield f"data: {raw_chunk}\n\n"
+                    except Exception as e:
+                        yield "event: error\n"
+                        yield f"data: {_json.dumps({'status': 'proxy_error', 'detail': str(e)})}\n\n"
+
+                return StreamingResponse(
+                    _sse_warming(),
+                    media_type="text/event-stream",
+                    headers={
+                        "Cache-Control": "no-cache",
+                        "X-Accel-Buffering": "no",  # disable nginx buffering
+                    },
+                )
+
+            else:
+                # "queue" — hold the request until warm (default)
+                warm = await wait_until_warm(model_name, timeout=300)
+                if not warm:
+                    raise HTTPException(
+                        status_code=503,
+                        detail=f"Model {model_name} timed out during cold start.",
+                    )
+                return await _proxy_request(model_name, body, request)
 
     finally:
         decrement_pending(model_name)
@@ -430,3 +516,215 @@ async def get_agent(agent_name: str):
     if not spec:
         raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
     return {"agent": agent_name, "spec": spec}
+
+
+@app.delete("/v1/agents/{agent_name}")
+async def delete_agent(agent_name: str):
+    """Delete an AgentConfig CRD from Kubernetes."""
+    from kubernetes import client, config as kube_config
+    from kubernetes.client.rest import ApiException
+
+    try:
+        kube_config.load_incluster_config()
+    except Exception:
+        kube_config.load_kube_config()
+
+    custom = client.CustomObjectsApi()
+    try:
+        custom.delete_namespaced_custom_object(
+            group="peag.io",
+            version="v1alpha1",
+            namespace="ai",
+            plural="agentconfigs",
+            name=agent_name,
+        )
+        logger.info(f"Agent '{agent_name}' deleted")
+        return {"deleted": agent_name, "status": "ok"}
+    except ApiException as e:
+        if e.status == 404:
+            raise HTTPException(status_code=404, detail=f"Agent '{agent_name}' not found")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ── Agent Builder — natural language → AgentConfig CRD ───────────────────────
+
+class BuildAgentRequest(BaseModel):
+    description: str
+
+
+@app.post("/v1/agents/build")
+async def build_agent(request: BuildAgentRequest):
+    """
+    Create an agent from a plain-English description.
+
+    The gateway sends the description to the smart model, which returns
+    a structured AgentConfig spec. PEAG validates it and applies it to
+    Kubernetes as an AgentConfig CRD.
+
+    Example body:
+      {
+        "description": "Search the web every morning and post a summary to Slack"
+      }
+    """
+    from agent_builder import build_agent_from_description
+
+    description = request.description.strip()
+    if not description:
+        raise HTTPException(status_code=400, detail="description field is required")
+
+    logger.info(f"Building agent from description: {description[:80]}...")
+
+    try:
+        result = await build_agent_from_description(description)
+        return result
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        logger.error(f"Agent build failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Agent build failed: {e}")
+
+
+# ── Tool Registry endpoints ───────────────────────────────────────────────────
+
+class ToolAssignment(BaseModel):
+    tool: str
+    model: str
+
+
+class BulkAssignRequest(BaseModel):
+    assignments: list[ToolAssignment]
+
+
+class RegisterToolRequest(BaseModel):
+    name: str
+    label: str
+    description: str
+    category: str = "general"
+    default_model: str = "auto"
+    parameters: dict = {}
+
+
+@app.get("/v1/tools")
+async def list_tools():
+    """
+    List all available tools with their current model assignments.
+
+    Returns built-in tools (web_search, code_runner, file_reader, etc.)
+    plus any custom tools registered via POST /v1/tools.
+    Each tool includes its 'assigned_model' field showing which ModelConfig
+    it's currently mapped to.
+    """
+    from tool_registry import list_tools as _list_tools
+    return {"tools": _list_tools()}
+
+
+@app.get("/v1/tools/{tool_name}")
+async def get_tool(tool_name: str):
+    """Get details of a single tool including its current model assignment."""
+    from tool_registry import get_tool as _get_tool
+    tool = _get_tool(tool_name)
+    if not tool:
+        raise HTTPException(status_code=404, detail=f"Tool '{tool_name}' not found")
+    return tool
+
+
+@app.put("/v1/tools/{tool_name}/assign")
+async def assign_tool(tool_name: str, body: ToolAssignment):
+    """
+    Assign a tool to a specific model config.
+
+    Example body:
+      { "tool": "code_runner", "model": "smart" }
+
+    After this, any agent using code_runner will route that tool's
+    model selection to the "smart" ModelConfig.
+    """
+    from tool_registry import assign_tool_to_model
+
+    if body.tool != tool_name:
+        raise HTTPException(
+            status_code=400,
+            detail="tool name in URL and body must match"
+        )
+
+    try:
+        result = assign_tool_to_model(tool_name, body.model)
+        return {"status": "ok", "tool": result}
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/tools/assign-bulk")
+async def assign_tools_bulk(body: BulkAssignRequest):
+    """
+    Assign multiple tools to models in one call.
+    Useful for saving the whole Agent Studio tool board at once.
+
+    Example body:
+      {
+        "assignments": [
+          { "tool": "code_runner", "model": "smart" },
+          { "tool": "web_search", "model": "fast" },
+          { "tool": "file_reader", "model": "fast" }
+        ]
+      }
+    """
+    from tool_registry import assign_tools_bulk as _bulk
+
+    raw = [{"tool": a.tool, "model": a.model} for a in body.assignments]
+
+    try:
+        results = _bulk(raw)
+        return {"status": "ok", "updated": len(results), "tools": results}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/v1/tools")
+async def register_tool(body: RegisterToolRequest):
+    """
+    Register a custom tool in the tool registry.
+
+    This lets you add new tool types visible in the Agent Studio.
+    For example, you could add a "jira_ticket" tool and map it to
+    a specific model config.
+
+    The name must be lowercase letters, numbers, or underscores (2-50 chars).
+    Built-in tool names cannot be used.
+    """
+    from tool_registry import register_custom_tool
+
+    try:
+        result = register_custom_tool(
+            name=body.name,
+            label=body.label,
+            description=body.description,
+            category=body.category,
+            default_model=body.default_model,
+            parameters=body.parameters,
+        )
+        return {"status": "created", "tool": result}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/v1/tools/{tool_name}")
+async def delete_tool(tool_name: str):
+    """Delete a custom tool. Built-in tools cannot be deleted."""
+    from tool_registry import delete_custom_tool
+
+    try:
+        delete_custom_tool(tool_name)
+        return {"deleted": tool_name, "status": "ok"}
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=str(e))

@@ -3,7 +3,7 @@ import logging
 import time
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
-from state import ModelState, get_state, get_last_request
+from state import ModelState, get_state, get_last_request, set_state
 from scheduler import scale_to_zero
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,10 @@ def _get_all_model_configs() -> list[dict]:
         return []
 
 
-def _is_deployment_running(model_name: str) -> bool:
-    """Check if a model deployment actually exists and has ready replicas."""
+def _is_deployment_running_sync(model_name: str) -> bool:
+    """Check if a model deployment actually exists and has ready replicas.
+    Synchronous — call via asyncio.to_thread to avoid blocking the event loop.
+    """
     try:
         _load_kube_config()
         apps_v1 = client.AppsV1Api()
@@ -52,17 +54,23 @@ def _is_deployment_running(model_name: str) -> bool:
         return False
 
 
+async def _is_deployment_running(model_name: str) -> bool:
+    """Async wrapper — runs the blocking Kubernetes call in a thread pool."""
+    return await asyncio.to_thread(_is_deployment_running_sync, model_name)
+
+
 async def _check_model(model_name: str, idle_ttl: int) -> None:
     """Check a single model and scale it down if idle past TTL."""
     state = get_state(model_name)
 
-    # Only check models that are warm — cold/warming models are not running
+    # If Redis says warm but the pod is gone, correct the stale state
+    if state == ModelState.WARM and not await _is_deployment_running(model_name):
+        logger.warning(f"{model_name} state is warm but no deployment found — correcting to cold")
+        set_state(model_name, ModelState.COLD)
+        return
+
+    # Only act on warm models — cold/warming models are not running
     if state != ModelState.WARM:
-        # But if state says warm and no deployment exists, fix the state
-        if state == ModelState.WARM and not _is_deployment_running(model_name):
-            logger.warning(f"{model_name} state is warm but no deployment found — correcting to cold")
-            from state import set_state
-            set_state(model_name, ModelState.COLD)
         return
 
     last_request = get_last_request(model_name)
@@ -92,7 +100,7 @@ async def run_watcher() -> None:
 
     while True:
         try:
-            configs = _get_all_model_configs()
+            configs = await asyncio.to_thread(_get_all_model_configs)
 
             if not configs:
                 logger.debug("No ModelConfigs found — nothing to watch")

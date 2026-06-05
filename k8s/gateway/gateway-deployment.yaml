@@ -22,11 +22,14 @@ spec:
       serviceAccountName: peag-gateway
       containers:
         - name: peag-gateway
-          image: ghcr.io/ade-daemon/peag-gateway:latest-gateway:latest
+          image: ghcr.io/ade-daemon/peag-gateway:latest
           imagePullPolicy: Always
           ports:
             - containerPort: 8000
               name: http
+          envFrom:
+            - secretRef:
+                name: peag-gateway-secrets
           resources:
             requests:
               cpu: "100m"

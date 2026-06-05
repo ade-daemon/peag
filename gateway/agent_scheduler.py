@@ -152,10 +152,13 @@ async def _send_email(to: str, agent_name: str, message: str) -> None:
         msg["From"] = smtp_user
         msg["To"] = to
 
-        with smtplib.SMTP(smtp_host, smtp_port) as server:
-            server.starttls()
-            server.login(smtp_user, smtp_pass)
-            server.send_message(msg)
+        def _send_sync():
+            with smtplib.SMTP(smtp_host, smtp_port) as server:
+                server.starttls()
+                server.login(smtp_user, smtp_pass)
+                server.send_message(msg)
+
+        await asyncio.to_thread(_send_sync)
         logger.info(f"Email sent to {to}")
     except Exception as e:
         logger.error(f"Email send failed: {e}")

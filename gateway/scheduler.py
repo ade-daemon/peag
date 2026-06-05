@@ -152,7 +152,7 @@ def _build_deployment(model_name: str, spec: dict) -> client.V1Deployment:
                         client.V1Volume(
                             name="ollama-models",
                             persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                                claim_name="ollama-models"
+                                claim_name=f"ollama-models-{model_name}"
                             ),
                         )
                     ],
@@ -199,10 +199,12 @@ async def spin_up(model_name: str) -> bool:
 
         # Check if deployment already exists
         try:
-            apps_v1.read_namespaced_deployment(
+            await asyncio.to_thread(
+                apps_v1.read_namespaced_deployment,
                 name=f"peag-{model_name}", namespace=NAMESPACE
             )
-            logger.info(f"Deployment for {model_name} already exists")
+            logger.info(f"Deployment for {model_name} already exists — ensuring state is WARMING")
+            set_state(model_name, ModelState.WARMING)
             return True
         except ApiException as e:
             if e.status != 404:
@@ -210,13 +212,17 @@ async def spin_up(model_name: str) -> bool:
 
         # Create deployment
         deployment = _build_deployment(model_name, spec)
-        apps_v1.create_namespaced_deployment(namespace=NAMESPACE, body=deployment)
+        await asyncio.to_thread(
+            apps_v1.create_namespaced_deployment, namespace=NAMESPACE, body=deployment
+        )
         logger.info(f"Deployment created for {model_name} — state: warming")
 
         # Create service so gateway can route to this model
         service = _build_service(model_name)
         try:
-            v1.create_namespaced_service(namespace=NAMESPACE, body=service)
+            await asyncio.to_thread(
+                v1.create_namespaced_service, namespace=NAMESPACE, body=service
+            )
             logger.info(f"Service created for {model_name}")
         except ApiException as e:
             if e.status != 409:  # 409 = already exists, fine
@@ -239,7 +245,8 @@ async def scale_to_zero(model_name: str) -> None:
         v1 = client.CoreV1Api()
 
         # Delete deployment
-        apps_v1.delete_namespaced_deployment(
+        await asyncio.to_thread(
+            apps_v1.delete_namespaced_deployment,
             name=f"peag-{model_name}",
             namespace=NAMESPACE,
             body=client.V1DeleteOptions(propagation_policy="Foreground"),
@@ -248,7 +255,8 @@ async def scale_to_zero(model_name: str) -> None:
 
         # Delete service
         try:
-            v1.delete_namespaced_service(
+            await asyncio.to_thread(
+                v1.delete_namespaced_service,
                 name=f"peag-{model_name}", namespace=NAMESPACE
             )
             logger.info(f"Service deleted for {model_name}")
@@ -274,14 +282,17 @@ async def wait_until_warm(model_name: str, timeout: int = 900) -> bool:
     _load_kube_config()
     apps_v1 = client.AppsV1Api()
 
+    def _check_ready() -> bool:
+        dep = apps_v1.read_namespaced_deployment(
+            name=f"peag-{model_name}", namespace=NAMESPACE
+        )
+        return (dep.status.ready_replicas or 0) >= 1
+
     for _ in range(timeout // 5):
         await asyncio.sleep(5)
         try:
-            dep = apps_v1.read_namespaced_deployment(
-                name=f"peag-{model_name}", namespace=NAMESPACE
-            )
-            ready = dep.status.ready_replicas or 0
-            if ready >= 1:
+            ready = await asyncio.to_thread(_check_ready)
+            if ready:
                 set_state(model_name, ModelState.WARM)
                 logger.info(f"{model_name} is warm and ready")
                 return True

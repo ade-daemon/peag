@@ -5,8 +5,7 @@ redis==7.4.0
 kubernetes==36.0.1
 pydantic==2.13.4
 prometheus-client==0.21.1
-duckduckgo-search==6.3.7
-duckduckgo-search==6.3.7
-duckduckgo-search==6.3.7
-pypdf==4.3.1
+duckduckgo-search==3.9.11
 croniter==3.0.3
+pypdf==4.3.1
+pydantic-settings==2.0.3

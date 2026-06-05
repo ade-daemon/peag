@@ -6,6 +6,8 @@ metadata:
 spec:
   scaleTargetRef:
     name: peag-fast
+    kind: Deployment
+    apiVersion: apps/v1
   minReplicaCount: 0
   maxReplicaCount: 3
   cooldownPeriod: 120
@@ -15,7 +17,9 @@ spec:
       metadata:
         address: redis.ai.svc.cluster.local:6379
         keyName: model:pending:fast
-        listLength: "1"
+        keyLength: "1"
+        activationKeyLength: "1"
+        databaseIndex: "0"
         enableTLS: "false"
 ---
 apiVersion: keda.sh/v1alpha1
@@ -26,6 +30,8 @@ metadata:
 spec:
   scaleTargetRef:
     name: peag-smart
+    kind: Deployment
+    apiVersion: apps/v1
   minReplicaCount: 0
   maxReplicaCount: 2
   cooldownPeriod: 300
@@ -35,5 +41,7 @@ spec:
       metadata:
         address: redis.ai.svc.cluster.local:6379
         keyName: model:pending:smart
-        listLength: "1"
+        keyLength: "1"
+        activationKeyLength: "1"
+        databaseIndex: "0"
         enableTLS: "false"
