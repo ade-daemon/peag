@@ -4,6 +4,7 @@ import json
 import httpx
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from state import (
     ModelState, get_state, set_state,
@@ -21,6 +22,13 @@ app = FastAPI(
     title="PEAG Gateway",
     description="Dynamic GPU/CPU orchestrator for local LLMs",
     version="0.1.0",
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # Where the model pods are reachable inside the cluster

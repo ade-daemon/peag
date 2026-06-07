@@ -1,0 +1,1554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PEAG · Agent Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  /* ── Reset & Base ─────────────────────────────────────────────────────── */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0a0a0b;
+    --bg2:       #111114;
+    --bg3:       #18181d;
+    --bg4:       #1f1f26;
+    --border:    #2a2a35;
+    --border2:   #3a3a48;
+    --text:      #e8e8f0;
+    --text2:     #9898b0;
+    --text3:     #5a5a70;
+    --accent:    #4ade9a;
+    --accent2:   #3bc880;
+    --accent-dim:#1a3d2a;
+    --red:       #f25757;
+    --red-dim:   #3d1a1a;
+    --amber:     #f5a623;
+    --amber-dim: #3d2a0a;
+    --blue:      #5b9cf6;
+    --blue-dim:  #1a2a3d;
+    --purple:    #a78bfa;
+    --radius:    6px;
+    --mono:      'IBM Plex Mono', monospace;
+    --sans:      'IBM Plex Sans', sans-serif;
+  }
+
+  html { font-size: 14px; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    line-height: 1.5;
+    overflow-x: hidden;
+  }
+
+  /* ── Scanline texture overlay ─────────────────────────────────────────── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 2px,
+      rgba(0,0,0,0.03) 2px,
+      rgba(0,0,0,0.03) 4px
+    );
+    pointer-events: none;
+    z-index: 9999;
+  }
+
+  /* ── Layout ───────────────────────────────────────────────────────────── */
+  .shell {
+    display: grid;
+    grid-template-rows: auto 1fr;
+    min-height: 100vh;
+    max-width: 1280px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ───────────────────────────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    padding: 0 32px;
+    height: 56px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg2);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--mono);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: 0.08em;
+    color: var(--text);
+  }
+
+  .logo-mark {
+    width: 26px; height: 26px;
+    background: var(--accent);
+    border-radius: 4px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: #0a0a0b;
+    flex-shrink: 0;
+  }
+
+  .logo-sep { color: var(--border2); margin: 0 2px; }
+
+  .header-status {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text3);
+  }
+
+  .status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── Nav Tabs ─────────────────────────────────────────────────────────── */
+  nav {
+    display: flex;
+    gap: 2px;
+    padding: 0 32px;
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text3);
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    letter-spacing: 0.05em;
+  }
+
+  .tab-btn:hover { color: var(--text2); }
+  .tab-btn.active {
+    color: var(--accent);
+    border-bottom-color: var(--accent);
+  }
+
+  .tab-icon { font-size: 14px; }
+  .tab-badge {
+    background: var(--bg4);
+    border: 1px solid var(--border2);
+    color: var(--text3);
+    font-size: 10px;
+    padding: 1px 5px;
+    border-radius: 10px;
+  }
+  .tab-btn.active .tab-badge {
+    background: var(--accent-dim);
+    border-color: var(--accent);
+    color: var(--accent);
+  }
+
+  /* ── Main Content ─────────────────────────────────────────────────────── */
+  main { padding: 32px; overflow-y: auto; }
+
+  .tab-panel { display: none; animation: fadeIn 0.2s ease; }
+  .tab-panel.active { display: block; }
+
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Section Headers ──────────────────────────────────────────────────── */
+  .section-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text3);
+  }
+
+  .section-desc {
+    font-size: 13px;
+    color: var(--text2);
+    margin-top: 4px;
+    font-weight: 300;
+  }
+
+  /* ── Cards ────────────────────────────────────────────────────────────── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+  }
+
+  /* ── Builder Panel ────────────────────────────────────────────────────── */
+  .builder-layout {
+    display: grid;
+    grid-template-columns: 1fr 380px;
+    gap: 24px;
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .builder-layout { grid-template-columns: 1fr; }
+  }
+
+  .builder-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .builder-card-header {
+    padding: 14px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg3);
+  }
+
+  .builder-card-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text2);
+  }
+
+  .builder-card-body { padding: 20px; }
+
+  /* ── Textarea ─────────────────────────────────────────────────────────── */
+  textarea {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 300;
+    line-height: 1.6;
+    padding: 14px 16px;
+    resize: vertical;
+    min-height: 120px;
+    transition: border-color 0.15s;
+    outline: none;
+  }
+
+  textarea:focus { border-color: var(--accent); }
+  textarea::placeholder { color: var(--text3); }
+
+  /* ── Input ────────────────────────────────────────────────────────────── */
+  input[type="text"] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 13px;
+    padding: 9px 12px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+
+  input[type="text"]:focus { border-color: var(--accent); }
+  input[type="text"]::placeholder { color: var(--text3); }
+
+  /* ── Examples list ────────────────────────────────────────────────────── */
+  .examples {
+    margin-top: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .example-chip {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 5px 12px;
+    font-size: 12px;
+    color: var(--text2);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .example-chip:hover {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--accent-dim);
+  }
+
+  /* ── Buttons ──────────────────────────────────────────────────────────── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 9px 18px;
+    border-radius: var(--radius);
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    transition: all 0.15s;
+    border: none;
+    outline: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #0a0a0b;
+  }
+  .btn-primary:hover { background: var(--accent2); }
+  .btn-primary:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border2);
+    color: var(--text2);
+  }
+  .btn-ghost:hover {
+    border-color: var(--border2);
+    background: var(--bg3);
+    color: var(--text);
+  }
+
+  .btn-danger {
+    background: transparent;
+    border: 1px solid var(--red);
+    color: var(--red);
+  }
+  .btn-danger:hover { background: var(--red-dim); }
+
+  .btn-sm { padding: 5px 12px; font-size: 11px; }
+
+  .btn-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
+  }
+
+  /* ── Spinner ──────────────────────────────────────────────────────────── */
+  .spinner {
+    width: 14px; height: 14px;
+    border: 2px solid rgba(0,0,0,0.2);
+    border-top-color: #0a0a0b;
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: none;
+  }
+  .btn-primary.loading .spinner { display: block; }
+  .btn-primary.loading .btn-label { opacity: 0.7; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Preview Panel ────────────────────────────────────────────────────── */
+  .preview-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 48px 20px;
+    text-align: center;
+    gap: 12px;
+  }
+
+  .preview-empty-icon {
+    font-size: 32px;
+    opacity: 0.3;
+  }
+
+  .preview-empty-text {
+    font-size: 12px;
+    color: var(--text3);
+    font-family: var(--mono);
+  }
+
+  .preview-result { display: none; }
+  .preview-result.visible { display: block; }
+
+  .preview-field {
+    margin-bottom: 14px;
+  }
+
+  .preview-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 5px;
+  }
+
+  .preview-value {
+    font-size: 13px;
+    color: var(--text);
+    line-height: 1.5;
+  }
+
+  .preview-value.mono {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  .preview-prompt {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 12px;
+    font-size: 12px;
+    color: var(--text2);
+    line-height: 1.6;
+    max-height: 120px;
+    overflow-y: auto;
+    font-family: var(--mono);
+  }
+
+  /* ── Tag Pills ────────────────────────────────────────────────────────── */
+  .tag-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+  }
+
+  .tag-green { background: var(--accent-dim); color: var(--accent); border: 1px solid rgba(74,222,154,0.2); }
+  .tag-blue  { background: var(--blue-dim);   color: var(--blue);   border: 1px solid rgba(91,156,246,0.2); }
+  .tag-amber { background: var(--amber-dim);  color: var(--amber);  border: 1px solid rgba(245,166,35,0.2); }
+  .tag-red   { background: var(--red-dim);    color: var(--red);    border: 1px solid rgba(242,87,87,0.2); }
+  .tag-purple{ background: rgba(167,139,250,0.1); color: var(--purple); border: 1px solid rgba(167,139,250,0.2); }
+  .tag-dim   { background: var(--bg4); color: var(--text3); border: 1px solid var(--border); }
+
+  /* ── Agents Grid ──────────────────────────────────────────────────────── */
+  .agents-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 16px;
+    margin-top: 24px;
+  }
+
+  .agent-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 18px;
+    transition: border-color 0.15s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .agent-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    background: var(--accent);
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .agent-card:hover { border-color: var(--border2); }
+  .agent-card:hover::before { opacity: 1; }
+
+  .agent-card-name {
+    font-weight: 500;
+    font-size: 14px;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .agent-card-id {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    margin-bottom: 10px;
+  }
+
+  .agent-card-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  .agent-card-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .agent-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 48px;
+    color: var(--text3);
+    font-size: 13px;
+    border: 1px dashed var(--border);
+    border-radius: var(--radius);
+  }
+
+  /* ── Tool Board ───────────────────────────────────────────────────────── */
+  .tool-board {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .tool-row {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    transition: border-color 0.15s;
+  }
+
+  .tool-row:hover { border-color: var(--border2); }
+
+  .tool-row-top {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .tool-icon {
+    width: 32px; height: 32px;
+    border-radius: var(--radius);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 15px;
+    flex-shrink: 0;
+  }
+
+  .tool-icon-green  { background: var(--accent-dim); }
+  .tool-icon-blue   { background: var(--blue-dim); }
+  .tool-icon-amber  { background: var(--amber-dim); }
+  .tool-icon-purple { background: rgba(167,139,250,0.1); }
+  .tool-icon-red    { background: var(--red-dim); }
+
+  .tool-info { flex: 1; }
+
+  .tool-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+
+  .tool-desc {
+    font-size: 11px;
+    color: var(--text3);
+    line-height: 1.4;
+  }
+
+  .tool-assign {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .tool-assign-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--text3);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  select {
+    flex: 1;
+    background: var(--bg);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 11px;
+    padding: 5px 8px;
+    outline: none;
+    cursor: pointer;
+    transition: border-color 0.15s;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%235a5a70'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 24px;
+  }
+  select:focus { border-color: var(--accent); }
+  select option { background: var(--bg3); }
+
+  /* ── Toolbar / Save bar ───────────────────────────────────────────────── */
+  .save-bar {
+    position: sticky;
+    bottom: 0;
+    left: 0; right: 0;
+    background: var(--bg2);
+    border-top: 1px solid var(--border);
+    padding: 14px 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 24px;
+  }
+
+  .save-bar-note {
+    font-size: 12px;
+    color: var(--text3);
+    font-family: var(--mono);
+  }
+
+  /* ── Toast ────────────────────────────────────────────────────────────── */
+  #toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--bg3);
+    border: 1px solid var(--border2);
+    border-radius: var(--radius);
+    padding: 12px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text);
+    z-index: 9999;
+    transform: translateY(80px);
+    opacity: 0;
+    transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 240px;
+    max-width: 360px;
+  }
+
+  #toast.show {
+    transform: translateY(0);
+    opacity: 1;
+  }
+
+  #toast.success { border-color: var(--accent); }
+  #toast.error   { border-color: var(--red); }
+
+  /* ── Error box ────────────────────────────────────────────────────────── */
+  .error-box {
+    background: var(--red-dim);
+    border: 1px solid var(--red);
+    border-radius: var(--radius);
+    padding: 12px 14px;
+    font-size: 12px;
+    color: var(--red);
+    font-family: var(--mono);
+    margin-top: 12px;
+    display: none;
+  }
+
+  .error-box.visible { display: block; }
+
+  /* ── Divider ──────────────────────────────────────────────────────────── */
+  .divider {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 20px 0;
+  }
+
+  /* ── Form label ───────────────────────────────────────────────────────── */
+  .form-label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text3);
+    margin-bottom: 6px;
+  }
+
+  .form-group { margin-bottom: 16px; }
+
+  /* ── Loader skeleton ──────────────────────────────────────────────────── */
+  @keyframes shimmer {
+    0% { background-position: -400px 0; }
+    100% { background-position: 400px 0; }
+  }
+
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg3) 25%, var(--bg4) 50%, var(--bg3) 75%);
+    background-size: 800px 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 3px;
+  }
+
+  /* ── Run agent modal overlay ──────────────────────────────────────────── */
+  .overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(4px);
+    z-index: 200;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .overlay.open { display: flex; }
+
+  .modal {
+    background: var(--bg2);
+    border: 1px solid var(--border2);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 560px;
+    overflow: hidden;
+    animation: modalIn 0.2s cubic-bezier(0.34,1.56,0.64,1);
+  }
+
+  @keyframes modalIn {
+    from { opacity: 0; transform: scale(0.95) translateY(10px); }
+    to   { opacity: 1; transform: scale(1) translateY(0); }
+  }
+
+  .modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg3);
+  }
+
+  .modal-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--text2);
+    letter-spacing: 0.08em;
+  }
+
+  .modal-close {
+    background: none;
+    border: none;
+    color: var(--text3);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 3px;
+    transition: all 0.1s;
+  }
+  .modal-close:hover { background: var(--bg4); color: var(--text); }
+
+  .modal-body { padding: 20px; }
+  .modal-footer { padding: 16px 20px; border-top: 1px solid var(--border); display: flex; gap: 10px; justify-content: flex-end; }
+
+  .response-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 14px;
+    font-size: 13px;
+    color: var(--text2);
+    line-height: 1.6;
+    min-height: 80px;
+    max-height: 300px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    font-family: var(--sans);
+    margin-top: 12px;
+    display: none;
+  }
+  .response-box.visible { display: block; }
+
+  /* ── Scrollbar ────────────────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- ── Header ─────────────────────────────────────────────────────────── -->
+  <header>
+    <div class="logo">
+      <div class="logo-mark">P</div>
+      PEAG <span class="logo-sep">/</span> Agent Studio
+    </div>
+    <div class="header-status">
+      <div class="status-dot"></div>
+      gateway connected
+    </div>
+  </header>
+
+  <!-- ── Tabs ───────────────────────────────────────────────────────────── -->
+  <nav>
+    <button class="tab-btn active" onclick="switchTab('build')" id="tab-build">
+      <span class="tab-icon">⚡</span>
+      Build Agent
+    </button>
+    <button class="tab-btn" onclick="switchTab('agents')" id="tab-agents">
+      <span class="tab-icon">◈</span>
+      Agents
+      <span class="tab-badge" id="agents-count">—</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('tools')" id="tab-tools">
+      <span class="tab-icon">⬡</span>
+      Tool Assignments
+    </button>
+  </nav>
+
+  <!-- ── Main ───────────────────────────────────────────────────────────── -->
+  <main>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         TAB: BUILD
+    ═════════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel active" id="panel-build">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Natural Language Agent Builder</div>
+          <div class="section-desc">Describe what you want the agent to do. PEAG will configure it.</div>
+        </div>
+      </div>
+
+      <div class="builder-layout">
+        <!-- Left: input form -->
+        <div>
+          <div class="builder-card">
+            <div class="builder-card-header">
+              <span class="tab-icon">✍</span>
+              <span class="builder-card-title">Describe your agent</span>
+            </div>
+            <div class="builder-card-body">
+              <textarea
+                id="agent-desc"
+                rows="5"
+                placeholder="e.g. Search the web every morning for AI news and post a summary to the #research Slack channel..."
+              ></textarea>
+
+              <div style="margin-top: 10px;">
+                <span class="form-label">Try an example</span>
+                <div class="examples" id="examples-list"></div>
+              </div>
+
+              <div id="build-error" class="error-box"></div>
+
+              <div class="btn-row">
+                <button class="btn btn-primary" id="build-btn" onclick="buildAgent()">
+                  <div class="spinner"></div>
+                  <span class="btn-label">Build Agent</span>
+                </button>
+                <button class="btn btn-ghost btn-sm" onclick="clearBuild()">Clear</button>
+                <span id="build-status" style="font-family: var(--mono); font-size: 11px; color: var(--text3); margin-left: 4px;"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right: preview -->
+        <div>
+          <div class="builder-card">
+            <div class="builder-card-header">
+              <span class="tab-icon">◈</span>
+              <span class="builder-card-title">Generated config</span>
+            </div>
+            <div class="builder-card-body">
+              <div class="preview-empty" id="preview-empty">
+                <div class="preview-empty-icon">⬡</div>
+                <div class="preview-empty-text">agent config will appear here</div>
+              </div>
+
+              <div class="preview-result" id="preview-result">
+                <div class="preview-field">
+                  <div class="preview-label">Name</div>
+                  <div class="preview-value" id="pr-name">—</div>
+                </div>
+                <div class="preview-field">
+                  <div class="preview-label">ID</div>
+                  <div class="preview-value mono" id="pr-id">—</div>
+                </div>
+                <div class="preview-field">
+                  <div class="preview-label">Model</div>
+                  <div class="preview-value" id="pr-model">—</div>
+                </div>
+                <div class="preview-field">
+                  <div class="preview-label">Tools</div>
+                  <div class="tag-row" id="pr-tools"></div>
+                </div>
+                <div class="preview-field" id="pr-schedule-row" style="display:none">
+                  <div class="preview-label">Schedule</div>
+                  <div class="preview-value mono" id="pr-schedule">—</div>
+                </div>
+                <div class="preview-field" id="pr-channel-row" style="display:none">
+                  <div class="preview-label">Output Channel</div>
+                  <div class="preview-value" id="pr-channel">—</div>
+                </div>
+                <div class="preview-field">
+                  <div class="preview-label">System Prompt</div>
+                  <div class="preview-prompt" id="pr-prompt">—</div>
+                </div>
+                <div class="preview-field">
+                  <div class="preview-label">Status</div>
+                  <span class="tag tag-green" id="pr-status">● live</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         TAB: AGENTS
+    ═════════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-agents">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Active Agents</div>
+          <div class="section-desc">All AgentConfig CRDs currently deployed in the cluster.</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadAgents()">↺ Refresh</button>
+      </div>
+
+      <div id="agents-loading" style="display:none; color: var(--text3); font-family: var(--mono); font-size: 12px; padding: 12px 0;">
+        Loading agents...
+      </div>
+
+      <div class="agents-grid" id="agents-grid">
+        <div class="agent-empty">No agents loaded. Click Refresh.</div>
+      </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════════════
+         TAB: TOOLS
+    ═════════════════════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="panel-tools">
+      <div class="section-header">
+        <div>
+          <div class="section-title">Tool → Model Assignments</div>
+          <div class="section-desc">Choose which model handles each tool. Changes take effect immediately on save.</div>
+        </div>
+      </div>
+
+      <div id="tools-loading" style="display:none; color: var(--text3); font-family: var(--mono); font-size: 12px; padding: 12px 0;">
+        Loading tools...
+      </div>
+
+      <!-- Custom tool registration -->
+      <div class="card" style="margin-bottom: 20px;">
+        <div style="display:flex; align-items:center; justify-content:space-between; cursor:pointer;" onclick="toggleCustom()">
+          <div>
+            <div style="font-size:13px; font-weight:500; margin-bottom:2px;">Register Custom Tool</div>
+            <div style="font-size:12px; color:var(--text3);">Map a new tool name (e.g. claude_code) to a model config</div>
+          </div>
+          <span id="custom-chevron" style="color:var(--text3); font-size:18px; transition:transform 0.2s;">›</span>
+        </div>
+        <div id="custom-form" style="display:none; margin-top:16px; padding-top:16px; border-top:1px solid var(--border);">
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+            <div class="form-group">
+              <label class="form-label">Tool Name (identifier)</label>
+              <input type="text" id="ct-name" placeholder="e.g. claude_code" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Display Label</label>
+              <input type="text" id="ct-label" placeholder="e.g. Claude Code Runner" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Description</label>
+            <input type="text" id="ct-desc" placeholder="What this tool does..." />
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div class="form-group">
+              <label class="form-label">Category</label>
+              <input type="text" id="ct-category" placeholder="e.g. code" />
+            </div>
+            <div class="form-group">
+              <label class="form-label">Default Model</label>
+              <select id="ct-model">
+                <option value="auto">auto</option>
+                <option value="fast">fast</option>
+                <option value="smart">smart</option>
+              </select>
+            </div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="registerCustomTool()">Register Tool</button>
+        </div>
+      </div>
+
+      <div class="tool-board" id="tool-board"></div>
+
+      <div class="save-bar">
+        <span class="save-bar-note" id="save-note">No unsaved changes</span>
+        <div style="display:flex; gap:10px;">
+          <button class="btn btn-ghost btn-sm" onclick="loadTools()">↺ Refresh</button>
+          <button class="btn btn-primary" id="save-btn" onclick="saveAssignments()" disabled>
+            <div class="spinner"></div>
+            <span class="btn-label">Save Assignments</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ── Run Agent Modal ──────────────────────────────────────────────────── -->
+<div class="overlay" id="run-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="run-modal-title">RUN AGENT</span>
+      <button class="modal-close" onclick="closeRunModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Message</label>
+        <textarea id="run-message" rows="3" placeholder="What do you want the agent to do?"></textarea>
+      </div>
+      <div class="response-box" id="run-response"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeRunModal()">Cancel</button>
+      <button class="btn btn-primary" id="run-btn" onclick="runAgentModal()">
+        <div class="spinner"></div>
+        <span class="btn-label">▶ Run</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Toast ──────────────────────────────────────────────────────────── -->
+<div id="toast"></div>
+
+<script>
+/* ── Config ──────────────────────────────────────────────────────────────── */
+// Change this to your actual PEAG gateway URL
+const GATEWAY_URL = window.PEAG_GATEWAY_URL || (
+  window.location.hostname === 'localhost'
+    ? 'http://localhost:8000'
+    : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`
+);
+
+/* ── State ─────────────────────────────────────────────────────────────── */
+let currentAgentId = null;
+let pendingAssignments = {};
+let toolsData = [];
+let hasUnsavedChanges = false;
+
+/* ── Examples ──────────────────────────────────────────────────────────── */
+const EXAMPLES = [
+  "Search the web every morning and post AI news to #research Slack",
+  "Analyze uploaded CSV files with Python and produce a summary report",
+  "Monitor a Google Doc and email me when it changes",
+  "Answer customer questions using our product docs as context",
+  "Run code reviews on Python files and output findings",
+  "Search latest arxiv papers weekly and send digest via email",
+];
+
+/* ── Init ──────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  // Render example chips
+  const el = document.getElementById('examples-list');
+  EXAMPLES.forEach(ex => {
+    const chip = document.createElement('button');
+    chip.className = 'example-chip';
+    chip.textContent = ex;
+    chip.onclick = () => {
+      document.getElementById('agent-desc').value = ex;
+      document.getElementById('agent-desc').focus();
+    };
+    el.appendChild(chip);
+  });
+});
+
+/* ── Tab switching ─────────────────────────────────────────────────────── */
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`tab-${tab}`).classList.add('active');
+  document.getElementById(`panel-${tab}`).classList.add('active');
+
+  if (tab === 'agents') loadAgents();
+  if (tab === 'tools')  loadTools();
+}
+
+/* ── Toast ─────────────────────────────────────────────────────────────── */
+function showToast(msg, type = 'success') {
+  const t = document.getElementById('toast');
+  const icon = type === 'success' ? '✓' : '✕';
+  t.innerHTML = `<span style="color:${type==='success'?'var(--accent)':'var(--red)'}">${icon}</span> ${msg}`;
+  t.className = `show ${type}`;
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => { t.className = ''; }, 3000);
+}
+
+/* ── API helper ────────────────────────────────────────────────────────── */
+async function api(method, path, body) {
+  const opts = {
+    method,
+    headers: { 'Content-Type': 'application/json' },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const resp = await fetch(`${GATEWAY_URL}${path}`, opts);
+  if (!resp.ok) {
+    const err = await resp.json().catch(() => ({ detail: resp.statusText }));
+    throw new Error(err.detail || `HTTP ${resp.status}`);
+  }
+  return resp.json();
+}
+
+/* ── Model colour ──────────────────────────────────────────────────────── */
+function modelTag(model) {
+  const colors = { smart: 'tag-purple', fast: 'tag-blue', auto: 'tag-amber' };
+  return `<span class="tag ${colors[model] || 'tag-dim'}">${model}</span>`;
+}
+
+function toolTag(tool) {
+  return `<span class="tag tag-green">${tool}</span>`;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   BUILD TAB
+════════════════════════════════════════════════════════════════════════ */
+
+async function buildAgent() {
+  const desc = document.getElementById('agent-desc').value.trim();
+  if (!desc) return;
+
+  const btn  = document.getElementById('build-btn');
+  const err  = document.getElementById('build-error');
+  const stat = document.getElementById('build-status');
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+  err.classList.remove('visible');
+  stat.textContent = 'Sending to gateway...';
+
+  try {
+    stat.textContent = 'Analysing description...';
+    const result = await api('POST', '/v1/agents/build', { description: desc });
+    showPreview(result);
+    showToast(`Agent "${result.name}" created`);
+    stat.textContent = '';
+    // Refresh badge count
+    refreshAgentsCount();
+  } catch (e) {
+    err.textContent = `Error: ${e.message}`;
+    err.classList.add('visible');
+    stat.textContent = '';
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+}
+
+function showPreview(agent) {
+  document.getElementById('preview-empty').style.display = 'none';
+  const r = document.getElementById('preview-result');
+  r.classList.add('visible');
+
+  document.getElementById('pr-name').textContent = agent.name || '—';
+  document.getElementById('pr-id').textContent = agent.id || '—';
+  document.getElementById('pr-model').innerHTML = modelTag(agent.model || 'auto');
+  document.getElementById('pr-prompt').textContent = agent.systemPrompt || '—';
+
+  const toolsEl = document.getElementById('pr-tools');
+  toolsEl.innerHTML = (agent.tools || []).length
+    ? agent.tools.map(t => toolTag(t)).join('')
+    : '<span class="tag tag-dim">no tools</span>';
+
+  const schedRow = document.getElementById('pr-schedule-row');
+  if (agent.schedule) {
+    schedRow.style.display = 'block';
+    document.getElementById('pr-schedule').textContent = agent.schedule;
+  } else {
+    schedRow.style.display = 'none';
+  }
+
+  const chanRow = document.getElementById('pr-channel-row');
+  if (agent.outputChannel && agent.outputChannel.type !== 'none') {
+    chanRow.style.display = 'block';
+    document.getElementById('pr-channel').textContent =
+      `${agent.outputChannel.type} → ${agent.outputChannel.target || '(none)'}`;
+  } else {
+    chanRow.style.display = 'none';
+  }
+}
+
+function clearBuild() {
+  document.getElementById('agent-desc').value = '';
+  document.getElementById('build-error').classList.remove('visible');
+  document.getElementById('preview-empty').style.display = 'flex';
+  document.getElementById('preview-result').classList.remove('visible');
+  document.getElementById('build-status').textContent = '';
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   AGENTS TAB
+════════════════════════════════════════════════════════════════════════ */
+
+async function loadAgents() {
+  const grid = document.getElementById('agents-grid');
+  const loading = document.getElementById('agents-loading');
+  loading.style.display = 'block';
+  grid.innerHTML = '';
+
+  try {
+    const data = await api('GET', '/v1/agents');
+    const agents = data.agents || [];
+
+    document.getElementById('agents-count').textContent = agents.length || '0';
+    loading.style.display = 'none';
+
+    if (!agents.length) {
+      grid.innerHTML = `<div class="agent-empty">
+        No agents found. Use the Build tab to create your first agent.
+      </div>`;
+      return;
+    }
+
+    agents.forEach(agent => {
+      grid.appendChild(renderAgentCard(agent));
+    });
+  } catch (e) {
+    loading.style.display = 'none';
+    grid.innerHTML = `<div class="agent-empty" style="color:var(--red)">
+      Failed to load agents: ${e.message}
+    </div>`;
+  }
+}
+
+async function refreshAgentsCount() {
+  try {
+    const data = await api('GET', '/v1/agents');
+    document.getElementById('agents-count').textContent = (data.agents || []).length;
+  } catch (_) {}
+}
+
+function renderAgentCard(agent) {
+  const card = document.createElement('div');
+  card.className = 'agent-card';
+  card.id = `agent-${agent.id}`;
+
+  const tools = (agent.tools || []);
+  const toolTags = tools.length
+    ? tools.map(t => toolTag(t)).join('')
+    : '<span class="tag tag-dim">no tools</span>';
+
+  const scheduleBadge = agent.schedule
+    ? `<span class="tag tag-amber" style="font-size:10px;">⏰ ${agent.schedule}</span>`
+    : '';
+
+  card.innerHTML = `
+    <div class="agent-card-name">
+      <span>${agent.name || agent.id}</span>
+      ${modelTag(agent.model || 'auto')}
+    </div>
+    <div class="agent-card-id">${agent.id}</div>
+    ${scheduleBadge ? `<div style="margin-bottom:8px;">${scheduleBadge}</div>` : ''}
+    <div class="agent-card-tools">${toolTags}</div>
+    <div class="agent-card-actions">
+      <button class="btn btn-ghost btn-sm" onclick="openRunModal('${agent.id}', '${(agent.name||agent.id).replace(/'/g,"\\'")}')">▶ Run</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteAgent('${agent.id}')">Delete</button>
+    </div>
+  `;
+  return card;
+}
+
+async function deleteAgent(agentId) {
+  if (!confirm(`Delete agent "${agentId}"? This removes the CRD from the cluster.`)) return;
+  try {
+    await api('DELETE', `/v1/agents/${agentId}`);
+    document.getElementById(`agent-${agentId}`)?.remove();
+    showToast(`Agent "${agentId}" deleted`);
+    refreshAgentsCount();
+  } catch (e) {
+    showToast(`Delete failed: ${e.message}`, 'error');
+  }
+}
+
+/* ── Run modal ─────────────────────────────────────────────────────────── */
+function openRunModal(agentId, agentName) {
+  currentAgentId = agentId;
+  document.getElementById('run-modal-title').textContent = `RUN · ${agentName.toUpperCase()}`;
+  document.getElementById('run-message').value = '';
+  document.getElementById('run-response').className = 'response-box';
+  document.getElementById('run-response').textContent = '';
+  document.getElementById('run-btn').classList.remove('loading');
+  document.getElementById('run-btn').disabled = false;
+  document.getElementById('run-modal').classList.add('open');
+}
+
+function closeRunModal() {
+  document.getElementById('run-modal').classList.remove('open');
+  currentAgentId = null;
+}
+
+async function runAgentModal() {
+  const message = document.getElementById('run-message').value.trim();
+  if (!message || !currentAgentId) return;
+
+  const btn = document.getElementById('run-btn');
+  const resp = document.getElementById('run-response');
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+  resp.className = 'response-box visible';
+  resp.textContent = 'Running...';
+
+  try {
+    const result = await api('POST', `/v1/agents/${currentAgentId}/run`, { message });
+    resp.textContent = result.response || JSON.stringify(result, null, 2);
+    showToast('Agent completed');
+  } catch (e) {
+    resp.textContent = `Error: ${e.message}`;
+    resp.style.color = 'var(--red)';
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+   TOOLS TAB
+════════════════════════════════════════════════════════════════════════ */
+
+const TOOL_ICONS = {
+  web_search: { icon: '🔍', color: 'tool-icon-blue'   },
+  file_reader:{ icon: '📄', color: 'tool-icon-amber'  },
+  code_runner:{ icon: '⚙', color: 'tool-icon-green'  },
+  rag:        { icon: '🗂', color: 'tool-icon-purple' },
+  slack:      { icon: '💬', color: 'tool-icon-blue'   },
+  email:      { icon: '✉', color: 'tool-icon-amber'  },
+  google_docs:{ icon: '📝', color: 'tool-icon-green'  },
+  notion:     { icon: '◻', color: 'tool-icon-purple' },
+};
+
+async function loadTools() {
+  const board   = document.getElementById('tool-board');
+  const loading = document.getElementById('tools-loading');
+  loading.style.display = 'block';
+  board.innerHTML = '';
+
+  try {
+    const data = await api('GET', '/v1/tools');
+    toolsData = data.tools || [];
+    loading.style.display = 'none';
+    renderToolBoard();
+  } catch (e) {
+    loading.style.display = 'none';
+    board.innerHTML = `<div style="color:var(--red); font-size:12px; font-family:var(--mono);">
+      Failed to load tools: ${e.message}
+    </div>`;
+  }
+}
+
+function renderToolBoard() {
+  const board = document.getElementById('tool-board');
+  board.innerHTML = '';
+  pendingAssignments = {};
+  hasUnsavedChanges = false;
+  updateSaveBar();
+
+  toolsData.forEach(tool => {
+    board.appendChild(renderToolRow(tool));
+  });
+}
+
+function renderToolRow(tool) {
+  const iconInfo = TOOL_ICONS[tool.name] || { icon: '⬡', color: 'tool-icon-green' };
+  const isCustom = tool.custom || false;
+
+  const row = document.createElement('div');
+  row.className = 'tool-row';
+  row.id = `tool-row-${tool.name}`;
+
+  row.innerHTML = `
+    <div class="tool-row-top">
+      <div class="tool-icon ${iconInfo.color}">${iconInfo.icon}</div>
+      <div class="tool-info">
+        <div class="tool-name">${tool.label || tool.name} ${isCustom ? '<span class="tag tag-dim" style="font-size:9px;">custom</span>' : ''}</div>
+        <div class="tool-desc">${tool.description || ''}</div>
+      </div>
+    </div>
+    <div class="tool-assign">
+      <span class="tool-assign-label">Model →</span>
+      <select id="sel-${tool.name}" onchange="markChanged('${tool.name}', this.value)">
+        <option value="auto"  ${tool.assigned_model === 'auto'  ? 'selected' : ''}>auto</option>
+        <option value="fast"  ${tool.assigned_model === 'fast'  ? 'selected' : ''}>fast</option>
+        <option value="smart" ${tool.assigned_model === 'smart' ? 'selected' : ''}>smart</option>
+      </select>
+      ${isCustom ? `<button class="btn btn-danger btn-sm" onclick="deleteCustomTool('${tool.name}')" style="padding:4px 8px; font-size:11px;">✕</button>` : ''}
+    </div>
+  `;
+  return row;
+}
+
+function markChanged(toolName, modelName) {
+  pendingAssignments[toolName] = modelName;
+  hasUnsavedChanges = true;
+  updateSaveBar();
+}
+
+function updateSaveBar() {
+  const count = Object.keys(pendingAssignments).length;
+  const note  = document.getElementById('save-note');
+  const btn   = document.getElementById('save-btn');
+
+  if (!hasUnsavedChanges || count === 0) {
+    note.textContent = 'No unsaved changes';
+    btn.disabled = true;
+  } else {
+    note.textContent = `${count} unsaved change${count > 1 ? 's' : ''}`;
+    btn.disabled = false;
+  }
+}
+
+async function saveAssignments() {
+  const btn = document.getElementById('save-btn');
+  btn.classList.add('loading');
+  btn.disabled = true;
+
+  const assignments = Object.entries(pendingAssignments).map(([tool, model]) => ({
+    tool, model
+  }));
+
+  try {
+    await api('POST', '/v1/tools/assign-bulk', { assignments });
+    pendingAssignments = {};
+    hasUnsavedChanges = false;
+    updateSaveBar();
+    showToast(`Saved ${assignments.length} assignment${assignments.length > 1 ? 's' : ''}`);
+  } catch (e) {
+    showToast(`Save failed: ${e.message}`, 'error');
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = !hasUnsavedChanges;
+  }
+}
+
+/* ── Custom tool registration ────────────────────────────────────────── */
+let customOpen = false;
+
+function toggleCustom() {
+  customOpen = !customOpen;
+  document.getElementById('custom-form').style.display = customOpen ? 'block' : 'none';
+  document.getElementById('custom-chevron').style.transform = customOpen ? 'rotate(90deg)' : 'rotate(0deg)';
+}
+
+async function registerCustomTool() {
+  const name     = document.getElementById('ct-name').value.trim();
+  const label    = document.getElementById('ct-label').value.trim();
+  const desc     = document.getElementById('ct-desc').value.trim();
+  const category = document.getElementById('ct-category').value.trim() || 'general';
+  const model    = document.getElementById('ct-model').value;
+
+  if (!name || !label) {
+    showToast('Name and label are required', 'error');
+    return;
+  }
+
+  try {
+    const result = await api('POST', '/v1/tools', {
+      name, label, description: desc, category, default_model: model, parameters: {}
+    });
+    toolsData.push(result.tool);
+    renderToolBoard();
+    // Reset form
+    ['ct-name','ct-label','ct-desc','ct-category'].forEach(id => {
+      document.getElementById(id).value = '';
+    });
+    showToast(`Tool "${label}" registered`);
+  } catch (e) {
+    showToast(`Failed: ${e.message}`, 'error');
+  }
+}
+
+async function deleteCustomTool(toolName) {
+  if (!confirm(`Delete custom tool "${toolName}"?`)) return;
+  try {
+    await api('DELETE', `/v1/tools/${toolName}`);
+    toolsData = toolsData.filter(t => t.name !== toolName);
+    document.getElementById(`tool-row-${toolName}`)?.remove();
+    showToast(`Tool "${toolName}" deleted`);
+  } catch (e) {
+    showToast(`Delete failed: ${e.message}`, 'error');
+  }
+}
+
+/* ── Keyboard shortcuts ─────────────────────────────────────────────── */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeRunModal();
+  if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+    const buildPanel = document.getElementById('panel-build');
+    if (buildPanel.classList.contains('active')) buildAgent();
+  }
+});
+</script>
+</body>
+</html>

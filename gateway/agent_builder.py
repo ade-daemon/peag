@@ -91,7 +91,7 @@ async def _call_llm(description: str) -> str:
     Call the smart model to parse the description into a JSON AgentConfig spec.
     Ensures the model is warm before calling.
     """
-    config_name = "smart"
+    config_name = "fast"
 
     # Warm the model if needed
     state = get_state(config_name)
@@ -110,6 +110,10 @@ async def _call_llm(description: str) -> str:
     mc_spec = _get_model_config(config_name)
     actual_model = mc_spec.get("modelName", config_name) if mc_spec else config_name
     model_url = f"http://peag-{config_name}.ai.svc.cluster.local:{OLLAMA_PORT}"
+
+    # Keep model alive during the LLM call
+    from state import update_last_request
+    update_last_request(config_name)
 
     payload = {
         "model": actual_model,
@@ -289,8 +293,29 @@ async def build_agent_from_description(description: str) -> dict:
     logger.debug(f"LLM output: {raw_llm_output[:500]}")
 
     # Step 2: Extract and validate JSON
-    spec_dict = _extract_json(raw_llm_output)
-    slug, clean_spec = _validate_and_sanitize(spec_dict)
+    try:
+        spec_dict = _extract_json(raw_llm_output)
+        slug, clean_spec = _validate_and_sanitize(spec_dict)
+    except Exception:
+        import re
+        slug = re.sub(r'[^a-z0-9-]', '-', description[:30].lower()).strip('-')
+        slug = re.sub(r'-+', '-', slug)
+        tools = []
+        desc_lower = description.lower()
+        if any(w in desc_lower for w in ["search", "web", "news", "internet"]): tools.append("web_search")
+        if any(w in desc_lower for w in ["file", "pdf", "csv", "document"]): tools.append("file_reader")
+        if any(w in desc_lower for w in ["code", "python", "script", "run"]): tools.append("code_runner")
+        if "slack" in desc_lower: tools.append("slack")
+        if "email" in desc_lower: tools.append("email")
+        clean_spec = {
+            "name": description[:50],
+            "model": "fast",
+            "systemPrompt": f"You are a helpful AI assistant. Your task: {description}. Be concise and accurate.",
+            "tools": tools,
+            "outputChannel": {"type": "none", "target": ""},
+            "memory": {"enabled": True, "maxMessages": 20},
+        }
+        logger.warning(f"Using fallback config for: {description[:50]}")
 
     # Step 3: Apply to Kubernetes
     crd_result = _apply_agent_config(slug, clean_spec)

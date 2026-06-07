@@ -69,6 +69,8 @@ def find_config_by_model_name(model_id: str) -> str | None:
 def _build_deployment(model_name: str, spec: dict) -> client.V1Deployment:
     """Build a Kubernetes Deployment object for a model pod."""
     hardware = spec.get("hardware", "cpu")
+    # Pick the right PVC based on hardware type
+    pvc_name = "ollama-models-smart" if hardware == "gpu" else "ollama-models-fast"
     backend  = spec.get("backend", "ollama")
     resources = spec.get("resources", {})
     model_id = spec.get("modelName", model_name)
@@ -84,15 +86,17 @@ def _build_deployment(model_name: str, spec: dict) -> client.V1Deployment:
     container = client.V1Container(
         name=model_name,
         image=image,
+        image_pull_policy="IfNotPresent",
         # Start Ollama server, wait for it, pull the model, then keep running
         command=["sh", "-c", f"ollama serve & sleep 5 && ollama pull {model_id} && wait"],
+        
         ports=[client.V1ContainerPort(container_port=11434, name="api")],
         env=[
             client.V1EnvVar(name="OLLAMA_MODEL", value=model_id),
         ],
         volume_mounts=[
             client.V1VolumeMount(
-                name="ollama-models",
+                name=pvc_name,
                 mount_path="/root/.ollama",
             )
         ],
@@ -150,9 +154,9 @@ def _build_deployment(model_name: str, spec: dict) -> client.V1Deployment:
                     affinity=affinity,
                     volumes=[
                         client.V1Volume(
-                            name="ollama-models",
+                            name=pvc_name,
                             persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                                claim_name=f"ollama-models-{model_name}"
+                                claim_name=pvc_name
                             ),
                         )
                     ],
