@@ -835,13 +835,17 @@
 <div class="shell">
   <!-- ── Header ─────────────────────────────────────────────────────────── -->
   <header>
+    <a href="index.html" style="font-family:var(--mono);font-size:11px;color:var(--text3);text-decoration:none;letter-spacing:0.06em;display:flex;align-items:center;gap:6px;padding:4px 10px;border:1px solid var(--border);border-radius:var(--radius);transition:color 0.15s,border-color 0.15s;flex-shrink:0;" onmouseover="this.style.color='var(--accent)';this.style.borderColor='var(--accent)'" onmouseout="this.style.color='var(--text3)';this.style.borderColor='var(--border)'">← PEAG</a>
     <div class="logo">
       <div class="logo-mark">P</div>
       PEAG <span class="logo-sep">/</span> Agent Studio
     </div>
-    <div class="header-status">
-      <div class="status-dot"></div>
-      gateway connected
+    <div class="header-status" style="display:flex;align-items:center;gap:16px;">
+      <a href="https://linkedin.com/in/adedaemon" target="_blank" style="font-family:var(--mono);font-size:10px;color:var(--text3);text-decoration:none;letter-spacing:0.06em;transition:color 0.15s;" onmouseover="this.style.color='var(--accent)'" onmouseout="this.style.color='var(--text3)'">by Adedamola Fasakin ↗</a>
+      <div style="display:flex;align-items:center;gap:6px;">
+        <div class="status-dot"></div>
+        <span>gateway connected</span>
+      </div>
     </div>
   </header>
 
@@ -1094,11 +1098,133 @@ const GATEWAY_URL = window.PEAG_GATEWAY_URL || (
     : `${window.location.protocol}//${window.location.hostname}${window.location.port ? ':' + window.location.port : ''}`
 );
 
+/* ── Demo mode ───────────────────────────────────────────────────────────── */
+let DEMO_MODE = false;
+
+const DEMO_AGENTS = [
+  {
+    id: 'ai-news-digest',
+    name: 'AI News Digest',
+    model: 'smart',
+    tools: ['web_search', 'slack'],
+    schedule: '0 8 * * 1-5',
+    systemPrompt: 'Search for the latest AI research, product launches, and industry news. Summarise the top 5 stories in a concise digest and post to the #research Slack channel.',
+    outputChannel: { type: 'slack', target: '#research' }
+  },
+  {
+    id: 'code-reviewer',
+    name: 'Python Code Reviewer',
+    model: 'smart',
+    tools: ['code_runner', 'file_reader'],
+    schedule: null,
+    systemPrompt: 'Review Python files for code quality, security issues, and best practices. Output structured findings with severity levels and suggested fixes.',
+    outputChannel: { type: 'none' }
+  },
+  {
+    id: 'arxiv-weekly',
+    name: 'Arxiv Paper Digest',
+    model: 'smart',
+    tools: ['web_search', 'email'],
+    schedule: '0 9 * * 1',
+    systemPrompt: 'Search arxiv for the most cited new papers in machine learning and systems. Summarise the top 5 with abstracts and send as a weekly email digest.',
+    outputChannel: { type: 'email', target: 'team@company.com' }
+  },
+  {
+    id: 'csv-analyst',
+    name: 'CSV Data Analyst',
+    model: 'smart',
+    tools: ['file_reader', 'code_runner'],
+    schedule: null,
+    systemPrompt: 'Analyse uploaded CSV files using Python. Produce a structured summary report with key statistics, data quality issues, and visualisation recommendations.',
+    outputChannel: { type: 'none' }
+  },
+];
+
+const DEMO_TOOLS = [
+  { name: 'web_search',  label: 'Web Search',   description: 'Search the web for current information and news.', assigned_model: 'fast',  custom: false },
+  { name: 'file_reader', label: 'File Reader',   description: 'Read and parse uploaded files (PDF, CSV, TXT).', assigned_model: 'fast',  custom: false },
+  { name: 'code_runner', label: 'Code Runner',   description: 'Execute Python code in a sandboxed environment.', assigned_model: 'smart', custom: false },
+  { name: 'rag',         label: 'RAG / Docs',    description: 'Query your internal knowledge base with semantic search.', assigned_model: 'smart', custom: false },
+  { name: 'slack',       label: 'Slack',         description: 'Post messages and summaries to Slack channels.', assigned_model: 'fast',  custom: false },
+  { name: 'email',       label: 'Email',         description: 'Send emails and digest reports to recipients.', assigned_model: 'fast',  custom: false },
+  { name: 'google_docs', label: 'Google Docs',   description: 'Read and monitor Google Docs for changes.', assigned_model: 'auto', custom: false },
+  { name: 'notion',      label: 'Notion',        description: 'Read and write Notion pages and databases.', assigned_model: 'auto', custom: false },
+];
+
+// Simulated AI build — parses the description and returns a realistic config
+function demoBuild(description) {
+  const d = description.toLowerCase();
+  const tools = [];
+  if (d.includes('web') || d.includes('search') || d.includes('news') || d.includes('arxiv')) tools.push('web_search');
+  if (d.includes('slack'))   tools.push('slack');
+  if (d.includes('email'))   tools.push('email');
+  if (d.includes('csv') || d.includes('file') || d.includes('document')) tools.push('file_reader');
+  if (d.includes('code') || d.includes('python') || d.includes('review')) tools.push('code_runner');
+  if (d.includes('docs') || d.includes('notion') || d.includes('knowledge')) tools.push('rag');
+  if (!tools.length) tools.push('web_search');
+
+  const hasSchedule = d.includes('every') || d.includes('daily') || d.includes('weekly') || d.includes('morning') || d.includes('monday');
+  const schedule = hasSchedule
+    ? (d.includes('week') || d.includes('monday') ? '0 9 * * 1' : '0 8 * * 1-5')
+    : null;
+
+  const words = description.trim().split(/\s+/).slice(0, 4);
+  const name = words.map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase().replace(/[^a-z0-9]/gi,'')).join(' ') + ' Agent';
+  const id = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-agent$/, '') + '-agent';
+  const model = tools.includes('code_runner') || description.length > 80 ? 'smart' : 'fast';
+
+  const outputChannel = tools.includes('slack')
+    ? { type: 'slack', target: '#general' }
+    : tools.includes('email')
+    ? { type: 'email', target: 'team@company.com' }
+    : { type: 'none' };
+
+  return {
+    id, name, model, tools, schedule, outputChannel,
+    systemPrompt: `You are an autonomous agent. Your task: ${description.trim()}. Be concise, structured, and actionable in your outputs.`
+  };
+}
+
+/* ── Gateway detection ───────────────────────────────────────────────────── */
+async function detectGateway() {
+  try {
+    const resp = await fetch(`${GATEWAY_URL}/health`, { signal: AbortSignal.timeout(2000) });
+    if (resp.ok) {
+      DEMO_MODE = false;
+      return;
+    }
+  } catch (_) {}
+  DEMO_MODE = true;
+  showDemoBanner();
+}
+
+function showDemoBanner() {
+  const banner = document.createElement('div');
+  banner.id = 'demo-banner';
+  banner.innerHTML = `
+    <span style="color:var(--amber);font-weight:500;">⬡ Demo Mode</span>
+    <span style="color:var(--text3);margin:0 8px;">·</span>
+    No gateway detected — showing simulated data. Deploy PEAG to connect a live cluster.
+    <a href="index.html" style="color:var(--accent);text-decoration:none;margin-left:12px;font-weight:500;">Get started →</a>
+  `;
+  banner.style.cssText = `
+    position:fixed; top:56px; left:0; right:0; z-index:99;
+    background:var(--amber-dim); border-bottom:1px solid rgba(245,166,35,0.3);
+    padding:8px 32px; font-family:var(--mono); font-size:11px;
+    letter-spacing:0.05em; display:flex; align-items:center;
+  `;
+  document.body.appendChild(banner);
+  // Push main content down
+  document.querySelector('nav').style.top = '84px';
+  document.querySelector('main').style.paddingTop = '48px';
+}
+
 /* ── State ─────────────────────────────────────────────────────────────── */
 let currentAgentId = null;
 let pendingAssignments = {};
 let toolsData = [];
 let hasUnsavedChanges = false;
+let demoAgents = JSON.parse(JSON.stringify(DEMO_AGENTS)); // mutable copy
 
 /* ── Examples ──────────────────────────────────────────────────────────── */
 const EXAMPLES = [
@@ -1111,7 +1237,7 @@ const EXAMPLES = [
 ];
 
 /* ── Init ──────────────────────────────────────────────────────────────── */
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
   // Render example chips
   const el = document.getElementById('examples-list');
   EXAMPLES.forEach(ex => {
@@ -1124,6 +1250,14 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     el.appendChild(chip);
   });
+
+  // Check if gateway is live; fall back to demo if not
+  await detectGateway();
+
+  // Pre-populate agents count badge
+  if (DEMO_MODE) {
+    document.getElementById('agents-count').textContent = demoAgents.length;
+  }
 });
 
 /* ── Tab switching ─────────────────────────────────────────────────────── */
@@ -1149,6 +1283,7 @@ function showToast(msg, type = 'success') {
 
 /* ── API helper ────────────────────────────────────────────────────────── */
 async function api(method, path, body) {
+  if (DEMO_MODE) return demoApi(method, path, body);
   const opts = {
     method,
     headers: { 'Content-Type': 'application/json' },
@@ -1160,6 +1295,68 @@ async function api(method, path, body) {
     throw new Error(err.detail || `HTTP ${resp.status}`);
   }
   return resp.json();
+}
+
+/* ── Demo API router ───────────────────────────────────────────────────── */
+async function demoApi(method, path, body) {
+  // Simulate network latency
+  await new Promise(r => setTimeout(r, 600 + Math.random() * 800));
+
+  // Build agent
+  if (method === 'POST' && path === '/v1/agents/build') {
+    const agent = demoBuild(body.description);
+    demoAgents.push(agent);
+    return agent;
+  }
+  // List agents
+  if (method === 'GET' && path === '/v1/agents') {
+    return { agents: demoAgents };
+  }
+  // Update agent
+  if (method === 'PUT' && path.startsWith('/v1/agents/')) {
+    const id = path.split('/')[3];
+    const agent = demoAgents.find(a => a.id === id);
+    if (agent && body.spec) Object.assign(agent, body.spec);
+    return { updated: id };
+  }
+  // Delete agent
+  if (method === 'DELETE' && path.startsWith('/v1/agents/')) {
+    const id = path.split('/').pop();
+    demoAgents = demoAgents.filter(a => a.id !== id);
+    return { deleted: id };
+  }
+  // Run agent
+  if (method === 'POST' && path.includes('/run')) {
+    await new Promise(r => setTimeout(r, 1200));
+    const agentId = path.split('/')[3];
+    const agent = demoAgents.find(a => a.id === agentId);
+    return {
+      response: `[Demo] Agent "${agent?.name || agentId}" completed successfully.\n\nThis is a simulated response. In production, the agent would:\n• Execute its configured tools (${(agent?.tools||[]).join(', ')})\n• Process the request using the ${agent?.model || 'auto'} model\n• Return structured output based on its system prompt\n\nDeploy PEAG on your infrastructure to run agents live.`
+    };
+  }
+  // List tools
+  if (method === 'GET' && path === '/v1/tools') {
+    return { tools: DEMO_TOOLS };
+  }
+  // Save tool assignments
+  if (method === 'POST' && path === '/v1/tools/assign-bulk') {
+    (body.assignments || []).forEach(({ tool, model }) => {
+      const t = DEMO_TOOLS.find(x => x.name === tool);
+      if (t) t.assigned_model = model;
+    });
+    return { saved: body.assignments.length };
+  }
+  // Register custom tool
+  if (method === 'POST' && path === '/v1/tools') {
+    const t = { ...body, custom: true };
+    DEMO_TOOLS.push(t);
+    return { tool: t };
+  }
+  // Delete custom tool
+  if (method === 'DELETE' && path.startsWith('/v1/tools/')) {
+    return { deleted: true };
+  }
+  throw new Error('Unknown demo endpoint');
 }
 
 /* ── Model colour ──────────────────────────────────────────────────────── */
@@ -1294,6 +1491,7 @@ function renderAgentCard(agent) {
   const card = document.createElement('div');
   card.className = 'agent-card';
   card.id = `agent-${agent.id}`;
+  card.dataset.agent = JSON.stringify(agent);
 
   const tools = (agent.tools || []);
   const toolTags = tools.length
@@ -1314,6 +1512,7 @@ function renderAgentCard(agent) {
     <div class="agent-card-tools">${toolTags}</div>
     <div class="agent-card-actions">
       <button class="btn btn-ghost btn-sm" onclick="openRunModal('${agent.id}', '${(agent.name||agent.id).replace(/'/g,"\\'")}')">▶ Run</button>
+      <button class="btn btn-ghost btn-sm" onclick="openEditModalById('${agent.id}')">✎ Edit</button>
       <button class="btn btn-danger btn-sm" onclick="deleteAgent('${agent.id}')">Delete</button>
     </div>
   `;
@@ -1550,5 +1749,117 @@ document.addEventListener('keydown', e => {
   }
 });
 </script>
+
+<!-- ── Edit Agent Modal ──────────────────────────────────────────────────── -->
+<div class="overlay" id="edit-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title" id="edit-modal-title">EDIT AGENT</span>
+      <button class="modal-close" onclick="closeEditModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-agent-id" />
+      <div class="form-group">
+        <label class="form-label">Display Name</label>
+        <input type="text" id="edit-agent-name" placeholder="Agent display name" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Model</label>
+        <select id="edit-agent-model">
+          <option value="auto">auto — PEAG decides</option>
+          <option value="fast">fast — lightweight CPU model</option>
+          <option value="smart">smart — powerful GPU model</option>
+        </select>
+      </div>
+      <div class="form-group">
+        <label class="form-label">System Prompt</label>
+        <textarea id="edit-agent-prompt" rows="5" placeholder="System prompt..."></textarea>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Schedule (cron, optional)</label>
+        <input type="text" id="edit-agent-schedule" placeholder="e.g. 0 8 * * 1-5" />
+      </div>
+      <div class="form-group">
+        <label class="form-label">Tools (comma separated)</label>
+        <input type="text" id="edit-agent-tools" placeholder="e.g. web_search, code_runner" />
+      </div>
+      <div id="edit-error" class="error-msg"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeEditModal()">Cancel</button>
+      <button class="btn btn-primary" id="edit-save-btn" onclick="saveAgentEdit()">
+        <div class="spinner"></div>
+        <span class="btn-label">Save Changes</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ── Edit Agent ─────────────────────────────────────────────────────────── */
+let currentEditAgent = null;
+
+function openEditModalById(agentId) {
+  const card = document.getElementById(`agent-${agentId}`);
+  const agent = card ? JSON.parse(card.dataset.agent) : { id: agentId };
+  openEditModal(agent);
+}
+
+function openEditModal(agent) {
+  currentEditAgent = agent;
+  document.getElementById('edit-agent-id').value = agent.id;
+  document.getElementById('edit-modal-title').textContent = `EDIT · ${(agent.name || agent.id).toUpperCase()}`;
+  document.getElementById('edit-agent-name').value = agent.name || '';
+  document.getElementById('edit-agent-model').value = agent.model || 'auto';
+  document.getElementById('edit-agent-prompt').value = agent.systemPrompt || '';
+  document.getElementById('edit-agent-schedule').value = agent.schedule || '';
+  document.getElementById('edit-agent-tools').value = (agent.tools || []).join(', ');
+  document.getElementById('edit-error').textContent = '';
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function closeEditModal() {
+  document.getElementById('edit-modal').classList.remove('open');
+  currentEditAgent = null;
+}
+
+async function saveAgentEdit() {
+  const agentId = document.getElementById('edit-agent-id').value;
+  const btn = document.getElementById('edit-save-btn');
+  const errEl = document.getElementById('edit-error');
+
+  const spec = {
+    name: document.getElementById('edit-agent-name').value.trim(),
+    model: document.getElementById('edit-agent-model').value,
+    systemPrompt: document.getElementById('edit-agent-prompt').value.trim(),
+    schedule: document.getElementById('edit-agent-schedule').value.trim() || null,
+    tools: document.getElementById('edit-agent-tools').value
+      .split(',').map(t => t.trim()).filter(Boolean),
+    memory: { enabled: true, maxMessages: 20 },
+  };
+
+  if (!spec.name || !spec.systemPrompt) {
+    errEl.textContent = 'Name and system prompt are required.';
+    return;
+  }
+
+  btn.classList.add('loading');
+  btn.disabled = true;
+  errEl.textContent = '';
+
+  try {
+    await api('PUT', `/v1/agents/${agentId}`, { spec });
+    showToast(`Agent "${spec.name}" updated`);
+    closeEditModal();
+    loadAgents();
+  } catch (e) {
+    errEl.textContent = `Error: ${e.message}`;
+  } finally {
+    btn.classList.remove('loading');
+    btn.disabled = false;
+  }
+}
+</script>
+
 </body>
 </html>

@@ -736,3 +736,35 @@ async def delete_tool(tool_name: str):
         raise HTTPException(status_code=422, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+# ── PUT /v1/agents/{name} — update an existing agent ─────────────────────────
+@app.put("/v1/agents/{agent_name}")
+async def update_agent(agent_name: str, request: Request):
+    """Update an existing AgentConfig CRD."""
+    from kubernetes import client, config as kube_config
+    try:
+        kube_config.load_incluster_config()
+    except Exception:
+        kube_config.load_kube_config()
+
+    body = await request.json()
+    spec = body.get("spec", {})
+
+    if not spec:
+        raise HTTPException(status_code=400, detail="spec is required")
+
+    try:
+        custom = client.CustomObjectsApi()
+        existing = custom.get_namespaced_custom_object(
+            group="peag.io", version="v1alpha1",
+            namespace="ai", plural="agentconfigs", name=agent_name
+        )
+        existing["spec"].update(spec)
+        custom.replace_namespaced_custom_object(
+            group="peag.io", version="v1alpha1",
+            namespace="ai", plural="agentconfigs",
+            name=agent_name, body=existing
+        )
+        return {"updated": agent_name, "spec": existing["spec"]}
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=str(e))
